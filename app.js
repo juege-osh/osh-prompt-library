@@ -58,8 +58,9 @@ async function showPrompt(id, button) {
   $('promptImageList').replaceChildren();
   $('assetStatus').textContent = '';
   $('downloadPack').disabled = true;
+  $('copyAssets').hidden = true;
   copy.disabled = true;
-  copy.textContent = '复制完整提示词';
+  copy.textContent = '复制提示词';
   positionPrompt();
   const request = ++promptRequest;
   try {
@@ -74,6 +75,8 @@ async function showPrompt(id, button) {
     text.textContent = detail.text || '暂无完整中文提示词';
     copy.disabled = !detail.text;
     $('downloadPack').disabled = !detail.text;
+    $('copyAssets').hidden = !detail.images.length;
+    $('copyAssets').disabled = !detail.text;
     $('downloadPack').textContent = detail.images.length ? '打包下载提示词和参考图' : '下载提示词';
     const status = [];
     if (detail.images.length) status.push(`已收录 ${detail.images.length} 张原始参考图`);
@@ -202,7 +205,8 @@ function makeCard(item) {
   const promptButton = document.createElement('button');
   promptButton.className = 'promptAction';
   promptButton.type = 'button';
-  promptButton.textContent = '查看并复制提示词';
+  promptButton.textContent = '查看';
+  promptButton.setAttribute('aria-label', '查看提示词');
   promptButton.setAttribute('aria-expanded', 'false');
   promptButton.setAttribute('aria-controls', 'promptFloat');
   promptButton.addEventListener('click', () => showPrompt(item.id, promptButton));
@@ -292,10 +296,21 @@ $('next').addEventListener('click', () => {
 });
 $('closePrompt').addEventListener('click', hidePrompt);
 $('copyPrompt').addEventListener('click', async () => {
-  const value = $('promptText').textContent;
-  await navigator.clipboard.writeText(value);
-  $('copyPrompt').textContent = '已复制完整提示词';
-  setTimeout(() => {$('copyPrompt').textContent = '复制完整提示词';}, 1400);
+  const detail = promptCache.get(activeCaseId);
+  if (!detail?.text) return;
+  await navigator.clipboard.writeText(detail.text);
+  $('copyPrompt').textContent = '已复制';
+  setTimeout(() => {$('copyPrompt').textContent = '复制提示词';}, 1400);
+});
+$('copyAssets').addEventListener('click', async () => {
+  const detail = promptCache.get(activeCaseId);
+  if (!detail?.text || !detail.images.length) return;
+  const lines = ['完整中文提示词', detail.text, '', '原始参考图链接（打开时由网站签发临时地址）'];
+  detail.images.forEach((url, index) => lines.push(`${index + 1}. ${new URL(url, location.origin).href}`));
+  await navigator.clipboard.writeText(lines.join('\n'));
+  $('assetStatus').textContent = '已复制提示词和素材链接；原文件请用“下载资料”保存。';
+  $('copyAssets').textContent = '已复制提示词和素材链接';
+  setTimeout(() => {$('copyAssets').textContent = '复制全部资产';}, 1400);
 });
 const encoder = new TextEncoder();
 const crcTable = Uint32Array.from({length: 256}, (_, n) => {

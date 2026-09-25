@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>提示词与视频 · 觉哥学习库</title>
-  <meta name="description" content="浏览视频案例，查看并复制完整中文提示词。">
-  <link rel="stylesheet" href="/style.css?v=6">
-  <script src="/app.js?v=5" defer></script>
+  <meta name="description" content="浏览视频案例，在浮层查看和复制完整中文提示词。">
+  <link rel="stylesheet" href="/style.css?v=7">
+  <script src="/app.js?v=6" defer></script>
 </head>
 <body>
   <header>
@@ -18,7 +18,7 @@
     <section class="intro">
       <p class="eyebrow">PROMPT LIBRARY</p>
       <h1>看视频，学完整提示词。</h1>
-      <p>点击封面直接播放；点击卡片上的按钮，查看并复制完整中文提示词。</p>
+      <p>点击封面直接播放；点击“查看”打开提示词，再按需复制或下载素材。</p>
     </section>
     <section class="toolbar" aria-label="筛选案例">
       <label class="search"><span>搜索</span><input id="search" type="search" placeholder="搜索标题、提示词、风格或模型" autocomplete="off"></label>
@@ -36,7 +36,7 @@
     <p id="promptText"></p>
     <div id="promptImages" class="promptImages" hidden><strong>原始输入图</strong><div id="promptImageList"></div></div>
     <p id="assetStatus" class="assetStatus"></p>
-    <div class="promptActions"><button id="copyPrompt" class="copyPrompt" type="button">复制完整提示词</button><button id="downloadPack" class="downloadPack" type="button">下载资料</button></div>
+    <div class="promptActions"><button id="copyPrompt" class="copyPrompt" type="button">复制提示词</button><button id="copyAssets" class="downloadPack" type="button" title="复制提示词和素材链接；原文件请打包下载" hidden>复制全部资产</button><button id="downloadPack" class="downloadPack" type="button">下载资料</button></div>
   </aside>
 </body>
 </html>

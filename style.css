@@ -30,7 +30,7 @@
 #promptImageList a:focus-visible{outline:3px solid #21876b;outline-offset:2px}
 @media(max-width:460px){.playMark{width:36px;height:36px;font-size:14px}.promptAction{font-size:11px;padding:9px 5px}}
 .assetStatus{border-top:1px solid #e3ece5;margin:0 0 12px;padding-top:10px;color:#657671;font-size:11px;line-height:1.6}
-.promptActions{display:flex;gap:8px}.promptActions button{flex:1;font-size:12px;min-width:0}
+.promptActions{display:flex;gap:8px;flex-wrap:wrap}.promptActions button{flex:1 1 120px;font-size:12px;min-width:0}.promptActions button[hidden]{display:none}
 .downloadPack{border:1px solid #bad7c5;border-radius:8px;background:#eef7f0;color:#17634f;padding:10px;font-weight:700}
 .downloadPack:disabled{opacity:.5;cursor:default}
 .assetFilters{display:flex;gap:8px;flex-wrap:wrap;margin:17px 0 0}

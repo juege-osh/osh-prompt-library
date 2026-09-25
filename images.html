@@ -4,16 +4,16 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>图片提示词库 · 觉哥学习库</title>
 <meta name="description" content="浏览生成图片与对应中文提示词。">
-<link rel="stylesheet" href="/images.css?v=3"><script src="/images.js?v=2" defer></script>
+<link rel="stylesheet" href="/images.css?v=4"><script src="/images.js?v=3" defer></script>
 </head>
 <body>
 <header><a class="brand" href="/"><span class="mark">P</span><span><strong>提示词与视频</strong><small>真实案例学习库</small></span></a><nav><a href="/">视频提示词</a><a class="active" href="/images.html?v=2">图片提示词</a></nav></header>
 <main>
-<section class="intro"><p class="eyebrow">IMAGE PROMPT LIBRARY</p><h1>图片和对应的提示词。</h1><p>已上线 <strong id="allCount">—</strong> 张图片，图库持续增加中。点击图片查看原图，点击卡片按钮查看和复制中文提示词。</p></section>
+<section class="intro"><p class="eyebrow">IMAGE PROMPT LIBRARY</p><h1>图片和对应的提示词。</h1><p>已上线 <strong id="allCount">—</strong> 张图片，图库持续增加中。点击图片查看原图，点击“查看”打开中文提示词。</p></section>
 <section class="toolbar" aria-label="筛选图片"><label><span>搜索</span><input id="search" type="search" placeholder="搜索画面、模型或提示词" autocomplete="off"></label><label><span>图库</span><select id="source"><option value="">全部图库</option><option value="diffusiondb">DiffusionDB</option><option value="qwen">Qwen Image Bench</option><option value="tdeh">GPT Image 2 案例</option></select></label></section>
 <div class="resultline"><strong id="resultCount">正在加载…</strong><span id="translatedCount"></span></div>
 <section id="grid" class="grid" aria-live="polite"></section>
 <nav class="pagination" aria-label="翻页"><button id="prev" type="button">上一页</button><span id="pageText"></span><button id="next" type="button">下一页</button></nav>
 </main>
-<aside id="promptFloat" class="promptFloat" aria-label="图片提示词" hidden><div class="floatHead"><strong>图片提示词</strong><button id="closePrompt" type="button" aria-label="关闭">×</button></div><p id="promptText"></p><p id="promptStatus"></p><div class="floatActions"><button id="copyPrompt" type="button">复制完整提示词</button><button id="downloadPack" type="button">打包下载图片与提示词</button></div></aside>
+<aside id="promptFloat" class="promptFloat" aria-label="图片提示词" hidden><div class="floatHead"><strong>图片提示词</strong><button id="closePrompt" type="button" aria-label="关闭">×</button></div><p id="promptText"></p><p id="promptStatus"></p><div class="floatActions"><button id="copyPrompt" type="button">复制提示词</button><button id="copyAssets" type="button" title="复制提示词和原图链接；原文件请打包下载" hidden>复制全部资产</button><button id="downloadPack" type="button">打包下载图片与提示词</button></div></aside>
 </body></html>
