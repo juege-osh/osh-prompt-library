@@ -58,7 +58,7 @@ async function showPrompt(id, button) {
   $('promptImageList').replaceChildren();
   $('assetStatus').textContent = '';
   $('downloadPack').disabled = true;
-  $('copyAssets').hidden = true;
+  $('downloadPack').hidden = true;
   copy.disabled = true;
   copy.textContent = '复制提示词';
   positionPrompt();
@@ -74,10 +74,8 @@ async function showPrompt(id, button) {
     const detail = promptCache.get(id);
     text.textContent = detail.text || '暂无完整中文提示词';
     copy.disabled = !detail.text;
+    $('downloadPack').hidden = !detail.images.length;
     $('downloadPack').disabled = !detail.text;
-    $('copyAssets').hidden = !detail.images.length;
-    $('copyAssets').disabled = !detail.text;
-    $('downloadPack').textContent = detail.images.length ? '打包下载提示词和参考图' : '下载提示词';
     const status = [];
     if (detail.images.length) status.push(`已收录 ${detail.images.length} 张原始参考图`);
     else if (detail.missingReference) status.push('提示词提到的参考素材未收录');
@@ -302,16 +300,6 @@ $('copyPrompt').addEventListener('click', async () => {
   $('copyPrompt').textContent = '已复制';
   setTimeout(() => {$('copyPrompt').textContent = '复制提示词';}, 1400);
 });
-$('copyAssets').addEventListener('click', async () => {
-  const detail = promptCache.get(activeCaseId);
-  if (!detail?.text || !detail.images.length) return;
-  const lines = ['完整中文提示词', detail.text, '', '原始参考图链接（打开时由网站签发临时地址）'];
-  detail.images.forEach((url, index) => lines.push(`${index + 1}. ${new URL(url, location.origin).href}`));
-  await navigator.clipboard.writeText(lines.join('\n'));
-  $('assetStatus').textContent = '已复制提示词和素材链接；原文件请用“下载资料”保存。';
-  $('copyAssets').textContent = '已复制提示词和素材链接';
-  setTimeout(() => {$('copyAssets').textContent = '复制全部资产';}, 1400);
-});
 const encoder = new TextEncoder();
 const crcTable = Uint32Array.from({length: 256}, (_, n) => {
   for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
@@ -375,17 +363,13 @@ function saveFile(blob, filename) {
 }
 $('downloadPack').addEventListener('click', async () => {
   const detail = promptCache.get(activeCaseId);
-  if (!detail?.text) return;
+  if (!detail?.text || !detail.images.length) return;
   const id = activeCaseId;
   const button = $('downloadPack');
   button.disabled = true;
   button.textContent = '正在准备下载…';
   try {
     const prompt = encoder.encode(detail.text + '\n');
-    if (!detail.images.length) {
-      saveFile(new Blob([prompt], {type: 'text/plain;charset=utf-8'}), `${id}-提示词.txt`);
-      return;
-    }
     const files = [{name: '提示词.txt', data: prompt}];
     for (const [index, url] of detail.images.entries()) {
       const response = await fetch(url);
@@ -399,7 +383,7 @@ $('downloadPack').addEventListener('click', async () => {
     $('assetStatus').textContent = '打包失败，请稍后重试。';
   } finally {
     button.disabled = false;
-    button.textContent = detail.images.length ? '打包下载提示词和参考图' : '下载提示词';
+    button.textContent = '下载全部资产';
   }
 });
 document.addEventListener('pointerdown', event => {

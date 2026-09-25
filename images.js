@@ -27,7 +27,7 @@ async function showPrompt(id, button) {
   $('promptText').textContent = '正在加载提示词…';
   $('promptStatus').textContent = '';
   $('copyPrompt').disabled = $('downloadPack').disabled = true;
-  $('copyAssets').hidden = true;
+  $('downloadPack').hidden = true;
   positionPrompt();
   const current = ++requestId;
   try {
@@ -41,8 +41,7 @@ async function showPrompt(id, button) {
     $('promptText').textContent = detail.prompt_zh || '这张图片的中文提示词正在补齐。';
     $('promptStatus').textContent = detail.prompt_zh ? '图片与完整中文提示词已配对' : '原始提示词已保存，中文译文待补齐';
     $('copyPrompt').disabled = $('downloadPack').disabled = !detail.prompt_zh;
-    $('copyAssets').hidden = !detail.image;
-    $('copyAssets').disabled = !detail.prompt_zh;
+    $('downloadPack').hidden = !detail.image;
   } catch {
     if (current === requestId) $('promptText').textContent = '暂时无法加载，请重试。';
   }
@@ -113,14 +112,6 @@ $('copyPrompt').addEventListener('click', async () => {
   $('copyPrompt').textContent = '已复制';
   setTimeout(() => $('copyPrompt').textContent = '复制提示词', 1400);
 });
-$('copyAssets').addEventListener('click', async () => {
-  const detail = cache.get(activeId);
-  if (!detail?.prompt_zh || !detail.image) return;
-  await navigator.clipboard.writeText(`完整中文提示词\n${detail.prompt_zh}\n\n原图链接（打开时由网站签发临时地址）\n${new URL(detail.image, location.origin).href}`);
-  $('promptStatus').textContent = '已复制提示词和原图链接；原文件请打包下载。';
-  $('copyAssets').textContent = '已复制提示词和原图链接';
-  setTimeout(() => $('copyAssets').textContent = '复制全部资产', 1400);
-});
 const encoder = new TextEncoder();
 const crcTable = Uint32Array.from({length: 256}, (_, n) => {for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1; return n >>> 0;});
 function crc32(bytes) {let value = 0xffffffff; for (const byte of bytes) value = crcTable[(value ^ byte) & 255] ^ (value >>> 8); return (value ^ 0xffffffff) >>> 0;}
@@ -141,7 +132,7 @@ function zipFiles(files) {
 }
 $('downloadPack').addEventListener('click', async () => {
   const id = activeId, detail = cache.get(id);
-  if (!detail?.prompt_zh) return;
+  if (!detail?.prompt_zh || !detail.image) return;
   const button = $('downloadPack'); button.disabled = true; button.textContent = '正在打包…';
   try {
     const response = await fetch(detail.image);
@@ -151,7 +142,7 @@ $('downloadPack').addEventListener('click', async () => {
     const blob = zipFiles([{name:'提示词.txt',data:encoder.encode(detail.prompt_zh+'\n')},{name:`原图.${ext}`,data:new Uint8Array(await response.arrayBuffer())}]);
     const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = `${id}-图片与提示词.zip`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch { $('promptStatus').textContent = '打包失败，请稍后重试。'; }
-  finally {button.disabled = false; button.textContent = '打包下载图片与提示词';}
+  finally {button.disabled = false; button.textContent = '下载全部资产';}
 });
 document.addEventListener('pointerdown', event => {if (!$('promptFloat').hidden && !$('promptFloat').contains(event.target) && event.target !== activeButton) hidePrompt();});
 document.addEventListener('keydown', event => {if (event.key === 'Escape') hidePrompt();});
