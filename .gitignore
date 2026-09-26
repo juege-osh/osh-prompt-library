@@ -7,4 +7,11 @@
 __pycache__/
 prompt-osh-linux*
 .env
+.env.*
+!.env.example
 *.key
+.media-cache/
+.local/
+.idea/
+/prompt-osh-local
+/prompt-osh-local.exe

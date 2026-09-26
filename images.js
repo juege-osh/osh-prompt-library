@@ -1,7 +1,13 @@
 const $ = id => document.getElementById(id);
-const state = {page: 1, size: 24, total: 0, q: '', source: ''};
+const state = {page: 1, size: 24, total: 0, q: '', source: '', resource: new URLSearchParams(location.search).get('resource') || '', cost: 1};
+let deepLinkOpened = false;
 const cache = new Map();
 let activeId = '', activeButton = null, requestId = 0, loadId = 0, debounce;
+window.addEventListener('osh-price-change', event => {
+  state.cost=event.detail.image;
+  $('catalogPrice').textContent=`${state.cost} 积分 / 条`;
+  document.querySelectorAll('.promptAction span').forEach(span=>span.textContent=`提示词 · ${state.cost} 积分`);
+});
 function hidePrompt() {
   requestId++;
   $('promptFloat').hidden = true;
@@ -19,6 +25,9 @@ function positionPrompt() {
 }
 async function showPrompt(id, button) {
   if (activeButton === button && !$('promptFloat').hidden) { hidePrompt(); return; }
+  try {
+    if (!await window.OshAccount.ensureResource('image', id)) return;
+  } catch (err) { $('resultCount').textContent = err.message; return; }
   hidePrompt();
   activeButton = button;
   activeId = id;
@@ -32,15 +41,13 @@ async function showPrompt(id, button) {
   const current = ++requestId;
   try {
     if (!cache.has(id)) {
-      const response = await fetch(`/api/images/${encodeURIComponent(id)}`);
-      if (!response.ok) throw new Error('无法加载');
-      cache.set(id, await response.json());
+      cache.set(id, await window.OshAccount.api(`/api/images/${encodeURIComponent(id)}`));
     }
     if (current !== requestId) return;
     const detail = cache.get(id);
-    $('promptText').textContent = detail.prompt_zh || '这张图片的中文提示词正在补齐。';
+    $('promptText').textContent = detail.prompt_zh || detail.prompt_original || '暂无提示词';
     $('promptStatus').textContent = detail.prompt_zh ? '图片与完整中文提示词已配对' : '原始提示词已保存，中文译文待补齐';
-    $('copyPrompt').disabled = $('downloadPack').disabled = !detail.prompt_zh;
+    $('copyPrompt').disabled = $('downloadPack').disabled = !(detail.prompt_zh || detail.prompt_original);
     $('downloadPack').hidden = !detail.image;
   } catch {
     if (current === requestId) $('promptText').textContent = '暂时无法加载，请重试。';
@@ -50,11 +57,10 @@ async function showPrompt(id, button) {
 function makeCard(item) {
   const card = document.createElement('article');
   card.className = 'card';
-  const picture = document.createElement('a');
+  const picture = document.createElement('button');
   picture.className = 'imageButton';
-  picture.href = `/image-media/${encodeURIComponent(item.id)}/original`;
-  picture.target = '_blank';
-  picture.rel = 'noopener noreferrer';
+  picture.type = 'button';
+  picture.addEventListener('click', () => viewOriginal(item.id));
   picture.setAttribute('aria-label', '查看图片原图');
   const image = document.createElement('img');
   image.src = item.thumbnail;
@@ -70,7 +76,7 @@ function makeCard(item) {
   const button = document.createElement('button');
   button.className = 'promptAction';
   button.type = 'button';
-  button.textContent = '查看';
+  button.innerHTML = `<i data-lucide="file-text"></i><span>提示词 · ${state.cost} 积分</span>`;
   button.setAttribute('aria-label', '查看提示词');
   button.setAttribute('aria-expanded', 'false');
   button.setAttribute('aria-controls', 'promptFloat');
@@ -79,15 +85,34 @@ function makeCard(item) {
   card.append(picture, body);
   return card;
 }
+async function viewOriginal(id) {
+  try {
+    if (!await window.OshAccount.ensureResource('image', id)) return;
+    const detail = await window.OshAccount.api(`/api/images/${encodeURIComponent(id)}`);
+    const modal = document.createElement('dialog');
+    modal.className = 'originalDialog';
+    modal.innerHTML = '<form method="dialog"><button aria-label="关闭原图" title="关闭">×</button></form><img alt="原图"><a download>下载原图</a>';
+    const img = modal.querySelector('img');
+    img.src = detail.image;
+    img.addEventListener('error', () => { img.alt = '原图暂不可用，请稍后重试'; });
+    const download = modal.querySelector('a');
+    download.href = detail.image;
+    document.body.append(modal);
+    modal.addEventListener('close', () => modal.remove(), {once: true});
+    modal.showModal();
+  } catch (err) { $('resultCount').textContent = err.message; }
+}
 async function load() {
   const current = ++loadId;
   hidePrompt();
-  const params = new URLSearchParams({page: state.page, q: state.q, source: state.source});
+  const params = new URLSearchParams({page: state.page, q: state.q, source: state.source, resource:state.resource});
   const response = await fetch(`/api/images?${params}`);
   if (!response.ok) throw new Error('无法加载');
   const data = await response.json();
   if (current !== loadId) return;
   state.total = data.total;
+  state.cost = data.cost;
+  $('catalogPrice').textContent = `${data.cost} 积分 / 条`;
   $('allCount').textContent = data.all.toLocaleString();
   $('translatedCount').textContent = `已有中文提示词 ${data.translated.toLocaleString()} 张`;
   $('resultCount').textContent = `找到 ${data.total.toLocaleString()} 张图片`;
@@ -96,6 +121,12 @@ async function load() {
   $('pageText').textContent = `第 ${state.page} / ${Math.max(1, Math.ceil(data.total / data.size))} 页`;
   $('prev').disabled = state.page <= 1;
   $('next').disabled = state.page * data.size >= data.total;
+  window.OshShell?.icons();
+  if(state.resource && !deepLinkOpened && data.items.length) {
+    deepLinkOpened=true;
+    await window.OshAccount.ready;
+    if(current===loadId) await showPrompt(data.items[0].id,$('grid').querySelector('.promptAction'));
+  }
 }
 $('search').addEventListener('input', () => {
   clearTimeout(debounce);
@@ -106,7 +137,8 @@ $('prev').addEventListener('click', () => { state.page--; load().catch(showError
 $('next').addEventListener('click', () => { state.page++; load().catch(showError); scrollTo(0, 0); });
 $('closePrompt').addEventListener('click', hidePrompt);
 $('copyPrompt').addEventListener('click', async () => {
-  const text = cache.get(activeId)?.prompt_zh;
+  const detail = cache.get(activeId);
+  const text = detail?.prompt_zh || detail?.prompt_original;
   if (!text) return;
   await navigator.clipboard.writeText(text);
   $('copyPrompt').textContent = '已复制';
@@ -132,14 +164,15 @@ function zipFiles(files) {
 }
 $('downloadPack').addEventListener('click', async () => {
   const id = activeId, detail = cache.get(id);
-  if (!detail?.prompt_zh || !detail.image) return;
+  if (!(detail?.prompt_zh || detail?.prompt_original) || !detail.image) return;
   const button = $('downloadPack'); button.disabled = true; button.textContent = '正在打包…';
   try {
+    if (!await window.OshAccount.ensureResource('image', id)) return;
     const response = await fetch(detail.image);
     if (!response.ok) throw new Error('图片读取失败');
     const type = response.headers.get('content-type') || '';
     const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : type.includes('gif') ? 'gif' : 'jpg';
-    const blob = zipFiles([{name:'提示词.txt',data:encoder.encode(detail.prompt_zh+'\n')},{name:`原图.${ext}`,data:new Uint8Array(await response.arrayBuffer())}]);
+    const blob = zipFiles([{name:'提示词.txt',data:encoder.encode((detail.prompt_zh || detail.prompt_original)+'\n')},{name:`原图.${ext}`,data:new Uint8Array(await response.arrayBuffer())}]);
     const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = `${id}-图片与提示词.zip`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch { $('promptStatus').textContent = '打包失败，请稍后重试。'; }
   finally {button.disabled = false; button.textContent = '下载全部资产';}
@@ -148,4 +181,9 @@ document.addEventListener('pointerdown', event => {if (!$('promptFloat').hidden 
 document.addEventListener('keydown', event => {if (event.key === 'Escape') hidePrompt();});
 window.addEventListener('resize', positionPrompt);
 function showError() { $('resultCount').textContent = '暂时无法加载，请刷新重试'; }
+window.addEventListener('osh-user-change', () => {
+  cache.clear();
+  hidePrompt();
+  document.querySelectorAll('.originalDialog').forEach(modal => modal.close());
+});
 load().catch(showError);

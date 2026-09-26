@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
@@ -21,21 +22,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	_ "modernc.org/sqlite"
 )
 
-//go:embed index.html style.css app.js images.html images.js images.css
+//go:embed index.html style.css app.js images.html images.js images.css account.js account.css shell.js site.css workspace.html usage.js web-vendor/lucide.min.js web-vendor/chart.umd.js
 var assets embed.FS
 
 var validID = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,119}$`)
 var words = regexp.MustCompile(`[\pL\pN_-]+`)
 
 type server struct {
-	db       *sql.DB
-	imageDB  *sql.DB
-	root     string
-	r2Access string
-	r2Secret string
+	db          *sql.DB
+	imageDB     *sql.DB
+	appDB       *sql.DB
+	root        string
+	r2Access    string
+	r2Secret    string
+	mediaClient *http.Client
+	emailSender func(context.Context, string, string, string) error
 }
 
 func hmacSHA256(key []byte, value string) []byte {
@@ -125,6 +130,10 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 	asset := r.URL.Query().Get("asset")
 	clauses := []string{}
 	args := []any{}
+	if id := textParam(r, "resource", 120); id != "" {
+		clauses = append(clauses, "c.id=?")
+		args = append(args, id)
+	}
 	if term != "" {
 		if strings.IndexFunc(term, func(r rune) bool { return r >= 0x3400 && r <= 0x9fff }) >= 0 {
 			if len([]rune(term)) >= 3 {
@@ -210,6 +219,9 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 		firstImage := ""
 		if len(input) > 0 {
 			firstImage = s.mediaURL(x.ID, "input/0", input[0])
+			if firstImage != "" {
+				firstImage += "?preview=1"
+			}
 		}
 		items = append(items, map[string]any{"id": x.ID, "title": x.Title, "category": x.Category, "style": x.Style, "model": x.Model, "generation_type": x.GenerationType, "duration": d, "poster": poster, "video": s.mediaURL(x.ID, "video", x.Video), "input_image_count": len(input), "input_image_preview": firstImage})
 	}
@@ -233,7 +245,12 @@ func (s *server) list(w http.ResponseWriter, r *http.Request) {
 	var imageCases, missingCases int
 	_ = s.db.QueryRow("select count(*) from cases where input_images != '[]'").Scan(&imageCases)
 	_ = s.db.QueryRow("select count(*) from cases where missing_reference = 1").Scan(&missingCases)
-	jsonResponse(w, map[string]any{"total": total, "accepted": accepted, "image_cases": imageCases, "missing_cases": missingCases, "page": page, "size": 24, "items": items, "categories": groups("category"), "models": groups("model")})
+	pricing, err := readPricing(s.appDB)
+	if err != nil {
+		apiError(w, 500, "价格读取失败")
+		return
+	}
+	jsonResponse(w, map[string]any{"cost": pricing.Video, "total": total, "accepted": accepted, "image_cases": imageCases, "missing_cases": missingCases, "page": page, "size": 24, "items": items, "categories": groups("category"), "models": groups("model")})
 }
 func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/cases/")
@@ -241,15 +258,18 @@ func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var zh, images string
+	var zh, images, video string
 	var missingReference, hasOutputAudio int
-	err := s.db.QueryRow("select prompt_zh,input_images,missing_reference,has_output_audio from cases where id=?", id).Scan(&zh, &images, &missingReference, &hasOutputAudio)
+	err := s.db.QueryRow("select prompt_zh,input_images,missing_reference,has_output_audio,video from cases where id=?", id).Scan(&zh, &images, &missingReference, &hasOutputAudio, &video)
 	if err == sql.ErrNoRows {
 		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
 		fail(w, err)
+		return
+	}
+	if !s.requireResource(w, r, "video", id) {
 		return
 	}
 	var input []string
@@ -260,7 +280,7 @@ func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 			paths = append(paths, media)
 		}
 	}
-	jsonResponse(w, map[string]any{"id": id, "prompt_zh": zh, "input_images": paths, "missing_reference": missingReference != 0, "has_output_audio": hasOutputAudio != 0})
+	jsonResponse(w, map[string]any{"id": id, "prompt_zh": zh, "video": s.mediaURL(id, "video", video), "input_images": paths, "missing_reference": missingReference != 0, "has_output_audio": hasOutputAudio != 0})
 }
 func (s *server) media(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/media/"), "/")
@@ -298,20 +318,23 @@ func (s *server) media(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	preview := parts[1] == "input" && r.URL.Query().Get("preview") == "1"
+	public := parts[1] == "poster" || preview
+	if !public && !s.requireResource(w, r, "video", parts[0]) {
+		return
+	}
+	kind := parts[1]
+	if kind == "input" {
+		i, _ := strconv.Atoi(parts[2])
+		kind = fmt.Sprintf("inputs/image-%02d", i+1)
+	}
+	key := "v1/cases/" + parts[0] + "/" + kind + strings.ToLower(filepath.Ext(relative))
+	if preview {
+		s.servePreview(w, r, key, relative)
+		return
+	}
 	if s.r2Access != "" && s.r2Secret != "" {
-		kind := parts[1]
-		if kind == "input" {
-			i, _ := strconv.Atoi(parts[2])
-			kind = fmt.Sprintf("inputs/image-%02d", i+1)
-		}
-		key := "v1/cases/" + parts[0] + "/" + kind + strings.ToLower(filepath.Ext(relative))
-		ttl := 900
-		if kind == "video" {
-			ttl = 3600
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		http.Redirect(w, r, signedR2URL(s.r2Access, s.r2Secret, key, time.Now(), ttl), http.StatusFound)
+		s.proxyMedia(w, r, key, public)
 		return
 	}
 	if !filepath.IsLocal(relative) {
@@ -334,7 +357,7 @@ func (s *server) media(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	setMediaHeaders(w, public)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(path)))
 	http.ServeContent(w, r, filepath.Base(path), stat.ModTime(), file)
@@ -345,8 +368,17 @@ func fileExists(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 func main() {
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		log.Fatal("Unable to load .env: ", err)
+	}
 	port := flag.Int("port", 18766, "local HTTP port")
+	appPath := flag.String("app-db", "app.sqlite3", "application SQLite path")
 	flag.Parse()
+	if _, err := loadSMTPConfig(); err != nil {
+		log.Print("SMTP not configured correctly; email verification is unavailable")
+	} else {
+		log.Print("SMTP email verification configured (TLS required)")
+	}
 	dir, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
@@ -368,6 +400,11 @@ func main() {
 	if (r2Access == "") != (r2Secret == "") {
 		log.Fatal("R2 credentials must be set together")
 	}
+	if r2Access == "" {
+		log.Print("R2 not configured; media requires local source files")
+	} else {
+		log.Print("R2 read-only media configured")
+	}
 	var imageDB *sql.DB
 	if fileExists(filepath.Join(dir, "images_catalog.sqlite3")) {
 		imageDB, err = sql.Open("sqlite", "file:"+filepath.Join(dir, "images_catalog.sqlite3")+"?mode=ro")
@@ -377,9 +414,47 @@ func main() {
 		defer imageDB.Close()
 		imageDB.SetMaxOpenConns(4)
 	}
-	s := &server{db, imageDB, root, r2Access, r2Secret}
+	appDB, err := sql.Open("sqlite", "file:"+*appPath+"?mode=rwc")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer appDB.Close()
+	appDB.SetMaxOpenConns(1)
+	if err = initAppDB(appDB); err != nil {
+		log.Fatal(err)
+	}
+	s := &server{db: db, imageDB: imageDB, appDB: appDB, root: root, r2Access: r2Access, r2Secret: r2Secret}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/auth/register", s.register)
+	mux.HandleFunc("POST /api/auth/login", s.login)
+	mux.HandleFunc("POST /api/auth/logout", s.logout)
+	mux.HandleFunc("POST /api/auth/email-code", s.sendEmailCode)
+	mux.HandleFunc("POST /api/auth/reset-password", s.resetPassword)
+	mux.HandleFunc("GET /api/me", s.me)
+	mux.HandleFunc("GET /api/user/profile", s.requireLevel(1, s.userProfile))
+	mux.HandleFunc("GET /api/user/usage", s.requireLevel(1, s.userUsage))
+	mux.HandleFunc("POST /api/user/password", s.requireLevel(1, s.changePassword))
+	mux.HandleFunc("POST /api/user/email", s.requireLevel(1, s.changeEmail))
+	mux.HandleFunc("POST /api/user/delete", s.requireLevel(1, s.deleteAccount))
+	mux.HandleFunc("GET /api/member/plans", s.memberPlans)
+	mux.HandleFunc("GET /api/member/status", s.requireLevel(1, s.memberStatus))
+	mux.HandleFunc("GET /api/member/center", s.requireLevel(1, s.memberCenter))
+	mux.HandleFunc("GET /api/orders", s.requireLevel(1, s.orderRecords))
+	mux.HandleFunc("GET /api/assets", s.requireLevel(1, s.purchasedAssets))
+	mux.HandleFunc("GET /api/pricing", s.pricing)
+	mux.HandleFunc("GET /api/admin/pricing", s.requireLevel(3, func(w http.ResponseWriter, r *http.Request, _ *currentUser) { s.pricing(w, r) }))
+	mux.HandleFunc("POST /api/admin/pricing", s.requireLevel(3, s.updatePricing))
+	mux.HandleFunc("GET /api/points/balance", s.requireLevel(1, s.pointBalance))
+	mux.HandleFunc("GET /api/points/records", s.requireLevel(1, s.pointRecords))
+	mux.HandleFunc("POST /api/admin/member/grant", s.requireLevel(3, s.adminGrantMember))
+	mux.HandleFunc("POST /api/admin/points/adjust", s.requireLevel(3, s.adminAdjustPoints))
+	mux.HandleFunc("GET /api/admin/users", s.requireLevel(3, s.adminUsers))
+	mux.HandleFunc("GET /api/admin/users/", s.requireLevel(3, s.adminUserDetail))
+	mux.HandleFunc("POST /api/admin/users/block", s.requireLevel(3, s.adminBlockUser))
+	mux.HandleFunc("POST /api/admin/users/unblock", s.requireLevel(3, s.adminUnblockUser))
 	mux.HandleFunc("GET /api/cases", s.list)
+	mux.HandleFunc("GET /api/resources/{kind}/{id}/access", s.resourceAccess)
+	mux.HandleFunc("POST /api/resources/{kind}/{id}/unlock", s.requireLevel(levelNormal, s.unlockResource))
 	mux.HandleFunc("GET /api/cases/", s.detail)
 	mux.HandleFunc("GET /media/", s.media)
 	mux.HandleFunc("GET /api/images", s.imageList)
@@ -388,7 +463,15 @@ func main() {
 	mux.HandleFunc("GET /images", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/images.html", http.StatusMovedPermanently)
 	})
-	for _, name := range []string{"index.html", "style.css", "app.js", "images.html", "images.js", "images.css"} {
+	for _, route := range []string{"/assets", "/account", "/member"} {
+		mux.HandleFunc("GET "+route, func(w http.ResponseWriter, r *http.Request) {
+			body, _ := assets.ReadFile("workspace.html")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Write(body)
+		})
+	}
+	for _, name := range []string{"index.html", "style.css", "app.js", "images.html", "images.js", "images.css", "account.js", "account.css", "shell.js", "site.css", "usage.js", "web-vendor/lucide.min.js", "web-vendor/chart.umd.js"} {
 		filename := name
 		route := "/" + name
 		mux.HandleFunc("GET "+route, func(w http.ResponseWriter, r *http.Request) {

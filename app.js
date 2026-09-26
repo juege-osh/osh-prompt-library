@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
-const state = {page: 1, total: 0, size: 24, q: '', category: '', model: '', duration: '', asset: ''};
+const state = {page: 1, total: 0, size: 24, q: '', category: '', model: '', duration: '', asset: '', resource: new URLSearchParams(location.search).get('resource') || '', cost: 5};
+let deepLinkOpened = false;
 const promptCache = new Map();
 let activeCaseId = '';
 let activeVideo = null;
@@ -7,6 +8,11 @@ let activePromptButton = null;
 let promptRequest = 0;
 let loadRequest = 0;
 let debounce;
+window.addEventListener('osh-price-change', event => {
+  state.cost=event.detail.video;
+  $('catalogPrice').textContent=`${state.cost} 积分 / 条`;
+  document.querySelectorAll('.promptAction span').forEach(span=>span.textContent=`提示词 · ${state.cost} 积分`);
+});
 
 function duration(value) {
   return Number.isFinite(value) && value > 0 ? `${value.toFixed(1)} 秒` : '时长待确认';
@@ -45,6 +51,12 @@ async function showPrompt(id, button) {
     hidePrompt();
     return;
   }
+  try {
+    if (!await window.OshAccount.ensureResource('video', id)) return;
+  } catch (err) {
+    $('resultCount').textContent = err.message;
+    return;
+  }
   hidePrompt();
   activePromptButton = button;
   activeCaseId = id;
@@ -65,16 +77,14 @@ async function showPrompt(id, button) {
   const request = ++promptRequest;
   try {
     if (!promptCache.has(id)) {
-      const response = await fetch(`/api/cases/${encodeURIComponent(id)}`);
-      if (!response.ok) throw new Error('无法加载');
-      const detail = await response.json();
-      promptCache.set(id, {text: detail.prompt_zh || '', images: detail.input_images || [], missingReference: detail.missing_reference, hasOutputAudio: detail.has_output_audio});
+      const detail = await window.OshAccount.api(`/api/cases/${encodeURIComponent(id)}`);
+      promptCache.set(id, {text: detail.prompt_zh || '', video: detail.video, images: detail.input_images || [], missingReference: detail.missing_reference, hasOutputAudio: detail.has_output_audio});
     }
     if (request !== promptRequest) return;
     const detail = promptCache.get(id);
     text.textContent = detail.text || '暂无完整中文提示词';
     copy.disabled = !detail.text;
-    $('downloadPack').hidden = !detail.images.length;
+    $('downloadPack').hidden = !detail.images.length && !detail.video;
     $('downloadPack').disabled = !detail.text;
     const status = [];
     if (detail.images.length) status.push(`已收录 ${detail.images.length} 张原始参考图`);
@@ -107,8 +117,14 @@ async function showPrompt(id, button) {
   positionPrompt();
 }
 
-function playCase(item, thumb) {
+async function playCase(item, thumb) {
   if (!item.video) return;
+  try {
+    if (!await window.OshAccount.ensureResource('video', item.id)) return;
+  } catch (err) {
+    $('resultCount').textContent = err.message;
+    return;
+  }
   if (activeVideo) activeVideo.pause();
   hidePrompt();
   const video = document.createElement('video');
@@ -123,7 +139,10 @@ function playCase(item, thumb) {
   activeVideo = video;
   let retry = 0;
   video.addEventListener('error', () => {
-    if (retry++ > 0) return;
+    if (retry++ > 0) {
+      $('resultCount').textContent = '视频暂时无法播放，请稍后重试。已解锁的资源不会重复扣费。';
+      return;
+    }
     const time = Number.isFinite(video.currentTime) ? video.currentTime : 0;
     video.src = `${item.video}?renew=${Date.now()}`;
     video.addEventListener('loadedmetadata', () => {
@@ -153,12 +172,12 @@ function makeCard(item) {
   } else {
     const placeholder = document.createElement('span');
     placeholder.className = 'placeholder';
-    placeholder.textContent = '✦';
+    placeholder.innerHTML = '<i data-lucide="clapperboard"></i>';
     cover.append(placeholder);
   }
   const play = document.createElement('span');
   play.className = 'playMark';
-  play.textContent = '▶';
+  play.innerHTML = '<i data-lucide="play"></i>';
   play.setAttribute('aria-hidden', 'true');
   const time = document.createElement('span');
   time.className = 'time';
@@ -193,7 +212,7 @@ function makeCard(item) {
     image.decoding = 'async';
     image.alt = '原始参考图预览';
     const label = document.createElement('span');
-    label.textContent = `原始参考图 ${item.input_image_count} 张 · 点击查看`;
+    label.textContent = `参考图预览 ${item.input_image_count} 张`;
     reference.append(image, label);
     reference.addEventListener('click', () => showPrompt(item.id, reference));
     body.append(title, tags, model, reference);
@@ -203,7 +222,7 @@ function makeCard(item) {
   const promptButton = document.createElement('button');
   promptButton.className = 'promptAction';
   promptButton.type = 'button';
-  promptButton.textContent = '查看';
+  promptButton.innerHTML = `<i data-lucide="file-text"></i><span>提示词 · ${state.cost} 积分</span>`;
   promptButton.setAttribute('aria-label', '查看提示词');
   promptButton.setAttribute('aria-expanded', 'false');
   promptButton.setAttribute('aria-controls', 'promptFloat');
@@ -225,6 +244,8 @@ async function load() {
   if (request !== loadRequest) return;
   state.total = data.total;
   state.size = data.size;
+  state.cost = data.cost;
+  $('catalogPrice').textContent = `${data.cost} 积分 / 条`;
   $('accepted').textContent = data.accepted.toLocaleString();
   $('imageCases').textContent = data.image_cases.toLocaleString();
   $('missingCases').textContent = data.missing_cases.toLocaleString();
@@ -244,6 +265,12 @@ async function load() {
   $('pageText').textContent = `第 ${state.page} / ${pages} 页`;
   $('prev').disabled = state.page <= 1;
   $('next').disabled = state.page >= pages;
+  window.OshShell?.icons();
+  if (state.resource && !deepLinkOpened && data.items.length) {
+    deepLinkOpened = true;
+    await window.OshAccount.ready;
+    if (request === loadRequest) await showPrompt(data.items[0].id, grid.querySelector('.promptAction'));
+  }
 }
 
 function showError() {
@@ -269,7 +296,8 @@ $('search').addEventListener('input', () => {
   }, 280);
 });
 $('clear').addEventListener('click', () => {
-  state.q = state.category = state.model = state.duration = state.asset = '';
+  state.q = state.category = state.model = state.duration = state.asset = state.resource = '';
+  history.replaceState(null,'','/');
   state.page = 1;
   $('search').value = '';
   $('duration').value = '';
@@ -363,14 +391,20 @@ function saveFile(blob, filename) {
 }
 $('downloadPack').addEventListener('click', async () => {
   const detail = promptCache.get(activeCaseId);
-  if (!detail?.text || !detail.images.length) return;
+  if (!detail?.text) return;
   const id = activeCaseId;
   const button = $('downloadPack');
   button.disabled = true;
   button.textContent = '正在准备下载…';
   try {
+    if (!await window.OshAccount.ensureResource('video', id)) return;
     const prompt = encoder.encode(detail.text + '\n');
     const files = [{name: '提示词.txt', data: prompt}];
+    if (detail.video) {
+      const response = await fetch(detail.video);
+      if (!response.ok) throw new Error('视频下载失败');
+      files.push({name: 'video.mp4', data: new Uint8Array(await response.arrayBuffer())});
+    }
     for (const [index, url] of detail.images.entries()) {
       const response = await fetch(url);
       if (!response.ok) throw new Error('参考图下载失败');
@@ -392,4 +426,14 @@ document.addEventListener('pointerdown', event => {
 document.addEventListener('keydown', event => {if (event.key === 'Escape') hidePrompt();});
 window.addEventListener('resize', positionPrompt);
 window.addEventListener('scroll', hidePrompt, {passive: true});
+window.addEventListener('osh-user-change', () => {
+  promptCache.clear();
+  hidePrompt();
+  for (const video of document.querySelectorAll('video')) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
+  load().catch(showError);
+});
 load().catch(showError);

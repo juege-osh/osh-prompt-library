@@ -2,14 +2,14 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>图片提示词库 · 觉哥学习库</title>
+<title>图片提示词 · OSH 灵感库</title>
 <meta name="description" content="浏览生成图片与对应中文提示词。">
-<link rel="stylesheet" href="/images.css?v=4"><script src="/images.js?v=4" defer></script>
+<link rel="stylesheet" href="/site.css?v=3"><script src="/web-vendor/lucide.min.js" defer></script><script src="/shell.js?v=1" defer></script><script src="/account.js?v=9" defer></script><script src="/images.js?v=7" defer></script>
 </head>
 <body>
-<header><a class="brand" href="/"><span class="mark">P</span><span><strong>提示词与视频</strong><small>真实案例学习库</small></span></a><nav><a href="/">视频提示词</a><a class="active" href="/images.html?v=2">图片提示词</a></nav></header>
+<header></header>
 <main>
-<section class="intro"><p class="eyebrow">IMAGE PROMPT LIBRARY</p><h1>图片和对应的提示词。</h1><p>已上线 <strong id="allCount">—</strong> 张图片，图库持续增加中。点击图片查看原图，点击“查看”打开中文提示词。</p></section>
+<section class="intro"><p class="eyebrow">IMAGE PROMPT LIBRARY</p><h1>图片提示词</h1><p><strong id="allCount">—</strong> 个图像灵感 <span class="separator">/</span> <span id="catalogPrice">正在读取价格</span></p></section>
 <section class="toolbar" aria-label="筛选图片"><label><span>搜索</span><input id="search" type="search" placeholder="搜索画面、模型或提示词" autocomplete="off"></label><label><span>图库</span><select id="source"><option value="">全部图库</option><option value="diffusiondb">DiffusionDB</option><option value="qwen">Qwen Image Bench</option><option value="tdeh">GPT Image 2 案例</option></select></label></section>
 <div class="resultline"><strong id="resultCount">正在加载…</strong><span id="translatedCount"></span></div>
 <section id="grid" class="grid" aria-live="polite"></section>

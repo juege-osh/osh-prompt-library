@@ -1,0 +1,69 @@
+.accountWidget{display:flex;align-items:center}
+.accountButton{min-width:126px;border:1px solid #d8e5dc;border-radius:10px;background:#fff;color:#1d4f40;padding:8px 11px;text-align:left}
+.accountButton strong{display:block;font-size:13px;line-height:1.2}.accountButton span{display:block;margin-top:3px;color:#70817b;font-size:11px;white-space:nowrap}
+.accountButton:hover{border-color:#a8cdb8;background:#f2faf5}
+.accountDialog{width:min(860px,calc(100vw - 28px));max-height:calc(100vh - 36px);padding:0;border:0;border-radius:14px;box-shadow:0 24px 80px #06251b66;color:#192c31}
+.accountDialog::backdrop{background:#0b221980}.accountShell{background:#fff}
+.accountHead{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #e6ece8}.accountHead strong{font-size:17px}
+.accountHead button{width:30px;height:30px;border:0;border-radius:50%;background:#eef3ef;color:#43574b;font-size:21px;line-height:1}
+.accountBody{padding:18px 20px 20px;overflow:auto;max-height:calc(100vh - 128px)}
+.accountMessage{min-height:18px;margin:0;padding:8px 20px 0;color:#6d7e75;font-size:12px}.accountMessage.error{color:#a13b31}.accountMessage.success{color:#17684f}
+.authGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.authGrid .accountForm:last-child{grid-column:1/-1}
+.accountForm{border:1px solid #e4ece6;border-radius:10px;padding:14px;background:#fbfdfb}.accountForm h3{margin:0 0 12px;font-size:15px}
+.accountForm label{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;color:#63756c;font-size:12px;font-weight:700}
+.accountForm input,.grantForm input,.grantForm select{height:39px;border:1px solid #dce7e0;border-radius:8px;background:#fff;padding:0 10px;outline:none;color:#233b32;min-width:0}
+.accountForm input:focus,.grantForm input:focus,.grantForm select:focus{border-color:#21876b;box-shadow:0 0 0 3px #21876b1b}
+.accountForm button,.grantForm button,.logoutButton,.memberPlan button,.adminUser button{height:39px;border:0;border-radius:8px;background:#17684f;color:#fff;padding:0 13px;font-weight:700}
+.inlineFields{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.inlineFields button{margin-bottom:10px;background:#eef7f0;color:#17684f;border:1px solid #cfe3d7}
+.accountTabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.accountTabs button{border:1px solid #d9e7de;border-radius:8px;background:#fff;color:#49685a;padding:8px 12px}.accountTabs button.active{background:#17684f;color:#fff;border-color:#17684f}
+.accountSummary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.accountSummary div{border:1px solid #e4ece6;border-radius:10px;background:#fbfdfb;padding:12px}
+.accountSummary span{display:block;color:#768a80;font-size:11px}.accountSummary strong{display:block;margin-top:6px;font-size:17px;color:#174c3b}
+.accountSection{margin-top:16px}.sectionTitle{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}.sectionTitle h3{margin:0;font-size:14px}.sectionTitle span{color:#81908a;font-size:11px}
+.infoList{display:grid;gap:7px}.infoList p{display:flex;justify-content:space-between;gap:12px;margin:0;padding:9px 0;border-bottom:1px solid #edf2ef;font-size:12px}.infoList b{color:#5a7065}.infoList span{color:#203b32;text-align:right}
+.formGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.dangerForm button{background:#a13b31}
+.memberPlans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.memberPlan{border:1px solid #dfe9e3;border-radius:10px;background:#f7fbf8;padding:12px}.memberPlan strong,.memberPlan b,.memberPlan span{display:block}.memberPlan strong{font-size:13px}.memberPlan b{margin-top:8px;color:#17684f}.memberPlan span{margin-top:5px;color:#6e8077;font-size:11px}.memberPlan button{width:100%;margin-top:10px;background:#eef3ef;color:#7a8b82;cursor:not-allowed}
+.explain{border:1px solid #e4ece6;border-radius:10px;background:#fbfdfb;padding:14px}.explain h3{margin:0 0 8px}.explain p{margin:7px 0;color:#5d7168;font-size:13px;line-height:1.7}
+.orderList,.adminUsers{display:grid;gap:8px}.orderRow,.adminUser{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;border:1px solid #e6eee8;border-radius:9px;padding:10px;font-size:12px}.orderRow span,.adminUser span{color:#60756b}.orderRow b{color:#17684f}.orderRow small{color:#87968f}
+.grantForm{display:grid;grid-template-columns:minmax(0,1fr) 150px 150px auto;gap:8px}.adminPanel .grantForm + .adminUsers{margin-top:12px}.adminUser{grid-template-columns:1fr 1.6fr auto}.adminUser div{display:flex;gap:6px}.adminUser button{height:31px;background:#eef7f0;color:#17684f;border:1px solid #cfe3d7}.adminUser button[data-block]{color:#a13b31}
+.adminDetail{margin-top:12px;border:1px solid #e4ece6;border-radius:10px;background:#fbfdfb;padding:12px}.adminDetail:empty{display:none}.adminDetail h3{margin:0 0 7px;font-size:14px}.adminDetail p{margin:6px 0;color:#5e7168;font-size:12px}.adminDetail strong{display:block;margin-top:10px;font-size:12px}.adminDetail span{display:block;margin-top:5px;color:#65776f;font-size:12px}
+.logoutButton{margin-top:18px;background:#eef3ef;color:#43574b}.logoutButton:hover{background:#e3ebe6}
+@media(max-width:820px){.authGrid,.accountSummary,.memberPlans,.formGrid{grid-template-columns:1fr}.grantForm,.orderRow,.adminUser{grid-template-columns:1fr}.inlineFields{grid-template-columns:1fr}.inlineFields button{margin-bottom:0}.accountButton{min-width:92px;padding:7px}.accountButton span{display:none}}
+@media(max-width:460px){.accountDialog{width:calc(100vw - 14px)}.accountBody{padding:14px}.accountHead{padding:15px}.accountMessage{padding-left:14px;padding-right:14px}}
+.resourceDialog, .originalDialog {
+  max-width: min(480px, calc(100vw - 32px));
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+  padding: 24px;
+  color: #20242b;
+  background: #fff;
+}
+.resourceDialog::backdrop, .originalDialog::backdrop { background: rgb(0 0 0 / 55%); }
+.resourceDialog h3 { font-size: 20px; margin: 0 0 16px; }
+.resourceDialog p { font-size: 14px; line-height: 1.7; }
+.resourceDialog form > div { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+.resourceDialog button, .originalDialog button {
+  cursor: pointer; padding: 8px 16px; border: 1px solid #bbc2ca; border-radius: 6px; background: #fff; color: #20242b;
+}
+.resourceDialog button[value="unlock"] { background: #166b54; color: white; border-color: #166b54; }
+.originalDialog { max-width: min(1000px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 16px; }
+.originalDialog form { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.originalDialog img { display: block; max-width: 100%; max-height: calc(100dvh - 170px); object-fit: contain; margin: 0 auto 12px; }
+.originalDialog a { color: #166b54; }
+.imageButton { border: 0; padding: 0; cursor: pointer; width: 100%; }
+.accountWidget { min-width: 0; max-width: 220px; }
+.accountButton { width: 100%; min-width: 0; }
+.accountButton strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.infoList span, .adminDetail p, .adminUser > * { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  header { height: auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 140px); gap: 12px; padding: 14px 16px; }
+  header .brand { grid-column: 1; grid-row: 1; min-width: 0; gap: 8px; }
+  header .brand strong { font-size: 15px; white-space: nowrap; }
+  header .brand small { font-size: 10px; }
+  header .mark { width: 30px; height: 30px; flex-shrink: 0; }
+  header .accountWidget { grid-column: 2; grid-row: 1; width: 100%; max-width: none; }
+  header nav, header .siteNav { grid-column: 1 / -1; grid-row: 2; display: flex; gap: 8px; justify-content: flex-start; }
+  header nav a { white-space: nowrap; }
+  header .count { display: none; }
+  .accountButton span { display: block; font-size: 10px; }
+  .intro h1 { font-size: 27px; }
+}

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func (s *server) imageList(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +26,10 @@ func (s *server) imageList(w http.ResponseWriter, r *http.Request) {
 	source := textParam(r, "source", 30)
 	where := []string{}
 	args := []any{}
+	if id := textParam(r, "resource", 120); id != "" {
+		where = append(where, "id=?")
+		args = append(args, id)
+	}
 	if source == "diffusiondb" || source == "qwen" || source == "tdeh" {
 		where = append(where, "source_code=?")
 		args = append(args, source)
@@ -67,7 +70,12 @@ func (s *server) imageList(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, map[string]any{"id": id, "source": code, "model": model, "translated": translated != 0, "width": width, "height": height, "thumbnail": "/image-media/" + id + "/thumb"})
 	}
-	jsonResponse(w, map[string]any{"total": total, "all": all, "translated": translated, "page": page, "size": 24, "items": items})
+	pricing, err := readPricing(s.appDB)
+	if err != nil {
+		apiError(w, 500, "价格读取失败")
+		return
+	}
+	jsonResponse(w, map[string]any{"cost": pricing.Image, "total": total, "all": all, "translated": translated, "page": page, "size": 24, "items": items})
 }
 
 func (s *server) imageDetail(w http.ResponseWriter, r *http.Request) {
@@ -80,14 +88,17 @@ func (s *server) imageDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var zh, code, model string
+	var zh, originalPrompt, code, model string
 	var width, height int
-	err := s.imageDB.QueryRow("select prompt_zh,source_code,model,width,height from images where id=?", id).Scan(&zh, &code, &model, &width, &height)
+	err := s.imageDB.QueryRow("select prompt_zh,prompt_original,source_code,model,width,height from images where id=?", id).Scan(&zh, &originalPrompt, &code, &model, &width, &height)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	jsonResponse(w, map[string]any{"id": id, "prompt_zh": zh, "source": code, "model": model, "width": width, "height": height, "image": "/image-media/" + id + "/original"})
+	if !s.requireResource(w, r, "image", id) {
+		return
+	}
+	jsonResponse(w, map[string]any{"id": id, "prompt_zh": zh, "prompt_original": originalPrompt, "source": code, "model": model, "width": width, "height": height, "image": "/image-media/" + id + "/original"})
 }
 
 func (s *server) imageMedia(w http.ResponseWriter, r *http.Request) {
@@ -107,28 +118,33 @@ func (s *server) imageMedia(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if kind == "original" && !s.requireResource(w, r, "image", id) {
+		return
+	}
+	if kind == "thumb" && thumb == "" {
+		var body []byte
+		if s.imageDB.QueryRow("select webp from embedded_thumbs where id=?", id).Scan(&body) == nil && len(body) > 0 {
+			w.Header().Set("Content-Type", "image/webp")
+			setMediaHeaders(w, true)
+			_, _ = w.Write(body)
+			return
+		}
+	}
 	if s.r2Access != "" && s.r2Secret != "" {
 		ext := ".webp"
 		if kind == "original" {
 			ext = strings.ToLower(filepath.Ext(original))
 		}
 		key := fmt.Sprintf("v1/images/%s/%s/%s%s", code, id, kind, ext)
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		http.Redirect(w, r, signedR2URL(s.r2Access, s.r2Secret, key, time.Now(), 900), http.StatusFound)
+		s.proxyMedia(w, r, key, kind == "thumb")
 		return
 	}
-	if kind == "thumb" && thumb == "" {
-		var body []byte
-		if s.imageDB.QueryRow("select webp from embedded_thumbs where id=?", id).Scan(&body) == nil {
-			w.Header().Set("Content-Type", "image/webp")
-			w.Header().Set("Cache-Control", "private, max-age=3600")
-			_, _ = w.Write(body)
+	relative := original
+	if kind == "thumb" {
+		if thumb == "" {
+			s.servePreview(w, r, "", original)
 			return
 		}
-	}
-	relative := original
-	if kind == "thumb" && thumb != "" {
 		relative = thumb
 	}
 	if !filepath.IsLocal(relative) {
@@ -152,6 +168,6 @@ func (s *server) imageMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(path)))
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	setMediaHeaders(w, kind == "thumb")
 	http.ServeContent(w, r, filepath.Base(path), stat.ModTime(), file)
 }
