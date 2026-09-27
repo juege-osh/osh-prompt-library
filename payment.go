@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -223,6 +224,20 @@ func (s *server) paymentProvider() string {
 	return provider
 }
 
+func paymentProviderErrorMessage(err error) string {
+	if err == nil {
+		return "支付平台下单失败，请稍后查询订单状态"
+	}
+	detail := strings.TrimSpace(err.Error())
+	if strings.HasPrefix(detail, "汇付下单失败:") {
+		return "汇付拒绝支付请求：" + strings.TrimSpace(strings.TrimPrefix(detail, "汇付下单失败:"))
+	}
+	if strings.Contains(detail, "汇付配置") {
+		return "汇付支付配置不完整，请联系管理员"
+	}
+	return "支付平台暂时不可达，请稍后查询订单状态"
+}
+
 func (s *server) createPaymentOrder(w http.ResponseWriter, r *http.Request, user *currentUser) {
 	if !sameOriginJSON(w, r) {
 		return
@@ -315,8 +330,9 @@ func (s *server) createPaymentOrder(w http.ResponseWriter, r *http.Request, user
 	} else {
 		result, providerErr := s.huifu.CreatePayment(paymentNo, subject, amountCents, req.Channel, expireAt)
 		if providerErr != nil {
+			log.Printf("汇付预下单失败 payment_no=%s error=%v", paymentNo, providerErr)
 			// A transport timeout leaves the local order pending so status/query can reconcile it.
-			apiError(w, http.StatusBadGateway, "支付平台下单失败，请稍后查询订单状态")
+			apiError(w, http.StatusBadGateway, paymentProviderErrorMessage(providerErr))
 			return
 		}
 		_, _ = s.appDB.Exec(`update payments set platform_trade_no=?, pay_url=?, qrcode=?, response_payload=?, updated_at=? where payment_no=?`,

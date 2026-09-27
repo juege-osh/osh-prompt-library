@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -82,11 +83,20 @@ func paymentJSONRequest(t *testing.T, h http.Handler, method, path, token string
 }
 
 func TestHuifuPCTradeType(t *testing.T) {
-	if got := huifuPCTradeType("alipay"); got != "A_JSAPI" {
-		t.Fatalf("alipay trade type = %q, want A_JSAPI", got)
+	if got := huifuPCTradeType("alipay"); got != "A_NATIVE" {
+		t.Fatalf("alipay trade type = %q, want A_NATIVE", got)
 	}
-	if got := huifuPCTradeType("wechat"); got != "T_JSAPI" {
-		t.Fatalf("wechat trade type = %q, want T_JSAPI", got)
+	if got := huifuPCTradeType("wechat"); got != "T_NATIVE" {
+		t.Fatalf("wechat trade type = %q, want T_NATIVE", got)
+	}
+}
+
+func TestPaymentProviderErrorMessage(t *testing.T) {
+	if got := paymentProviderErrorMessage(fmt.Errorf("汇付下单失败: 参数错误")); got != "汇付拒绝支付请求：参数错误" {
+		t.Fatalf("unexpected provider rejection message: %q", got)
+	}
+	if got := paymentProviderErrorMessage(fmt.Errorf("dial tcp: i/o timeout")); got != "支付平台暂时不可达，请稍后查询订单状态" {
+		t.Fatalf("unexpected transport message: %q", got)
 	}
 }
 

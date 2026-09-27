@@ -166,13 +166,13 @@ func (c *huifuPayClient) CreatePayment(paymentNo, subject string, amountCents in
 	return huifuPaymentResult{PaymentNo: paymentNo, PlatformTradeNo: firstValue(response, "hf_seq_id", "pre_order_id"), JumpURL: jump, ResponsePayload: raw}, nil
 }
 
-// PC 聚合正扫 uses the JSAPI trade types documented for the PC checkout flow.
-// A_NATIVE/T_NATIVE are mobile or app-oriented types and are not the PC values.
+// 汇付 PC 聚合正扫 uses the native trade types. The older osh-backend
+// integration and the PC payment flow both use these values.
 func huifuPCTradeType(channel string) string {
 	if strings.EqualFold(strings.TrimSpace(channel), "wechat") {
-		return "T_JSAPI"
+		return "T_NATIVE"
 	}
-	return "A_JSAPI"
+	return "A_NATIVE"
 }
 
 func (c *huifuPayClient) QueryPayment(paymentNo string, expectedAmountCents int64) (huifuPaymentResult, error) {
