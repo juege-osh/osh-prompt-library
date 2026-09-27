@@ -14,11 +14,52 @@ import (
 func paymentTestMux(s *server) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/payments/products", s.paymentProducts)
+	mux.HandleFunc("GET /api/admin/payment-prices", s.requireLevel(3, s.adminPaymentPrices))
+	mux.HandleFunc("POST /api/admin/payment-prices", s.requireLevel(3, s.adminPaymentPrices))
 	mux.HandleFunc("POST /api/payments/orders", s.requireLevel(1, s.createPaymentOrder))
 	mux.HandleFunc("GET /api/payments/{orderNo}", s.requireLevel(1, s.paymentStatus))
 	mux.HandleFunc("POST /api/payments/{orderNo}/cancel", s.requireLevel(1, s.cancelPayment))
 	mux.HandleFunc("POST /api/payments/{orderNo}/mock-success", s.requireLevel(1, s.mockPaymentSuccess))
 	return mux
+}
+
+func TestAdminCanChangePaymentPrices(t *testing.T) {
+	s, _ := testServer(t)
+	admin := testUser(t, s, 1, 3)
+	normal := testUser(t, s, 2, 1)
+	h := paymentTestMux(s)
+
+	paymentJSONRequest(t, h, "GET", "/api/admin/payment-prices", admin, "", http.StatusOK)
+	paymentJSONRequest(t, h, "GET", "/api/admin/payment-prices", normal, "", http.StatusForbidden)
+	paymentJSONRequest(t, h, "POST", "/api/admin/payment-prices", normal,
+		`{"kind":"plan","code":"vip_month","price_cents":100}`, http.StatusForbidden)
+	paymentJSONRequest(t, h, "POST", "/api/admin/payment-prices", admin,
+		`{"kind":"plan","code":"vip_month","price_cents":100}`, http.StatusOK)
+	paymentJSONRequest(t, h, "POST", "/api/admin/payment-prices", admin,
+		`{"kind":"plan","code":"vip_month","price_cents":100}`, http.StatusOK)
+	paymentJSONRequest(t, h, "POST", "/api/admin/payment-prices", admin,
+		`{"kind":"package","code":"points_1000","price_cents":200}`, http.StatusOK)
+
+	var planPrice, packagePrice int
+	if err := s.appDB.QueryRow(`select price_cents from member_plans where plan_code='vip_month'`).Scan(&planPrice); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.appDB.QueryRow(`select price_cents from point_packages where package_code='points_1000'`).Scan(&packagePrice); err != nil {
+		t.Fatal(err)
+	}
+	if planPrice != 100 || packagePrice != 200 {
+		t.Fatalf("unexpected payment prices: plan=%d package=%d", planPrice, packagePrice)
+	}
+
+	if err := initAppDB(s.appDB); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.appDB.QueryRow(`select price_cents from member_plans where plan_code='vip_month'`).Scan(&planPrice); err != nil {
+		t.Fatal(err)
+	}
+	if planPrice != 100 {
+		t.Fatalf("plan price was reset after initialization: %d", planPrice)
+	}
 }
 
 func paymentJSONRequest(t *testing.T, h http.Handler, method, path, token string, body string, status int) map[string]any {

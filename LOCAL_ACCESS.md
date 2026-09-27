@@ -77,6 +77,9 @@ and configuring a public notification URL. Never put those files or values in Gi
 - `POST /api/admin/pricing`: level 3 only; JSON `{"multiplier":0.1,"version":1}`.
   Origin checks, optimistic version checks and `pricing_changes` audit apply.
 - `GET /api/payments/products`: payment provider, membership plans and fixed recharge packages.
+- `GET /api/admin/payment-prices`: level 3 only; returns editable membership and recharge prices.
+- `POST /api/admin/payment-prices`: level 3 only; JSON `{"kind":"plan|package","code":"...","price_cents":100}`.
+  Prices are stored in cents and affect new orders only.
 - `POST /api/payments/orders`: level 1; JSON contains only `order_type` plus a server-known
   `plan_code` or `package_code`, and optional `channel` (`alipay` or `wechat`). Amounts are
   loaded from SQLite and cannot be submitted by the browser.

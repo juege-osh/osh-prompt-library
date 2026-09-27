@@ -451,6 +451,8 @@ func main() {
 	mux.HandleFunc("GET /api/member/center", s.requireLevel(1, s.memberCenter))
 	mux.HandleFunc("GET /api/orders", s.requireLevel(1, s.orderRecords))
 	mux.HandleFunc("GET /api/payments/products", s.paymentProducts)
+	mux.HandleFunc("GET /api/admin/payment-prices", s.requireLevel(3, s.adminPaymentPrices))
+	mux.HandleFunc("POST /api/admin/payment-prices", s.requireLevel(3, s.adminPaymentPrices))
 	mux.HandleFunc("POST /api/payments/orders", s.requireLevel(1, s.createPaymentOrder))
 	mux.HandleFunc("GET /api/payments/{orderNo}", s.requireLevel(1, s.paymentStatus))
 	mux.HandleFunc("POST /api/payments/{orderNo}/cancel", s.requireLevel(1, s.cancelPayment))

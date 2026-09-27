@@ -313,6 +313,14 @@
         <div class="pricingPreview"><span>视频实际消耗<strong id="videoCost"></strong></span><span>图片实际消耗<strong id="imageCost"></strong></span></div>
       </section>
       <section class="accountSection adminPanel">
+        <div class="sectionTitle"><h3>可修改会员价格</h3><span>只影响新订单</span></div>
+        <div class="paymentPriceGrid">${(state.paymentProducts.plans || []).map(plan => paymentPriceForm('plan', plan.planCode, plan.planName, plan.priceCents)).join('')}</div>
+      </section>
+      <section class="accountSection adminPanel">
+        <div class="sectionTitle"><h3>可修改可充值积分价格</h3><span>只影响新订单</span></div>
+        <div class="paymentPriceGrid">${(state.paymentProducts.rechargePackages || []).map(pkg => paymentPriceForm('package', pkg.packageCode, pkg.packageName, pkg.priceCents)).join('')}</div>
+      </section>
+      <section class="accountSection adminPanel">
         <div class="sectionTitle"><h3>检索用户</h3><span>用户名、邮箱或 ID</span></div>
         <form id="userSearch" class="grantForm"><input name="q" aria-label="用户关键词" placeholder="关键词"><select name="role" aria-label="用户角色"><option value="">全部角色</option><option value="normal">普通</option><option value="vip">VIP</option><option value="admin">管理员</option></select><select name="status" aria-label="用户状态"><option value="">全部状态</option><option value="active">正常</option><option value="blocked">已拉黑</option></select><button type="submit">搜索</button></form>
         <div id="adminUsers" class="adminUsers"></div>
@@ -324,6 +332,7 @@
       </section>`;
     panel.querySelector('#userSearch').addEventListener('submit', submitUserSearch);
     panel.querySelector('#grantMemberForm').addEventListener('submit', submitGrant);
+    panel.querySelectorAll('.paymentPriceForm').forEach(form => form.addEventListener('submit', submitPaymentPrice));
     const pricingForm = panel.querySelector('#pricingForm');
     const preview = () => {
       const hundredths = Math.round(Number(pricingForm.elements.multiplier.value) * 100);
@@ -348,6 +357,34 @@
     preview();
     renderAdminUsers(panel.querySelector('#adminUsers'));
     window.OshShell?.icons();
+  }
+
+  function paymentPriceForm(kind, code, name, priceCents) {
+    return `<form class="paymentPriceForm" data-kind="${esc(kind)}" data-code="${esc(code)}"><label>${esc(name)}<input type="number" name="price" min="0.01" max="1000000" step="0.01" value="${(Number(priceCents || 0) / 100).toFixed(2)}" required></label><button type="submit"><i data-lucide="save"></i> 保存价格</button></form>`;
+  }
+
+  async function submitPaymentPrice(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button');
+    const price = Number(form.elements.price.value);
+    const priceCents = Math.round(price * 100);
+    if (!Number.isFinite(price) || !Number.isSafeInteger(priceCents) || priceCents < 1 || priceCents > 100000000) {
+      setMessage('价格须在 0.01 元到 1000000 元之间，并最多保留两位小数', 'error');
+      return;
+    }
+    button.disabled = true;
+    try {
+      const data = await api('/api/admin/payment-prices', {method:'POST', body:{kind:form.dataset.kind, code:form.dataset.code, price_cents:priceCents}});
+      state.paymentProducts = {...state.paymentProducts, plans:data.plans || [], rechargePackages:data.rechargePackages || []};
+      state.plans = state.paymentProducts.plans;
+      renderConsole(document.getElementById('workspaceBody'));
+      setMessage('支付价格已保存，新订单将使用新价格。', 'success');
+    } catch (err) {
+      setMessage(err.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function renderAdminUsers(box) {

@@ -64,6 +64,17 @@ type pointPackageRecord struct {
 	price  int64
 }
 
+type adminPaymentPricesVO struct {
+	Plans            []memberPlanVO   `json:"plans"`
+	RechargePackages []pointPackageVO `json:"rechargePackages"`
+}
+
+type adminPaymentPriceRequest struct {
+	Kind       string `json:"kind"`
+	Code       string `json:"code"`
+	PriceCents int64  `json:"price_cents"`
+}
+
 func (s *server) paymentProducts(w http.ResponseWriter, r *http.Request) {
 	plans, err := s.loadMemberPlans()
 	if err != nil {
@@ -80,6 +91,95 @@ func (s *server) paymentProducts(w http.ResponseWriter, r *http.Request) {
 		"plans":            plans,
 		"rechargePackages": packages,
 	})
+}
+
+func (s *server) adminPaymentPrices(w http.ResponseWriter, r *http.Request, _ *currentUser) {
+	if r.Method == http.MethodGet {
+		catalog, err := s.loadAdminPaymentPrices()
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, "支付价格读取失败")
+			return
+		}
+		jsonResponse(w, catalog)
+		return
+	}
+	if !sameOriginJSON(w, r) {
+		return
+	}
+	var req adminPaymentPriceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		apiError(w, http.StatusBadRequest, "请求格式不正确")
+		return
+	}
+	req.Kind = strings.TrimSpace(req.Kind)
+	req.Code = strings.TrimSpace(req.Code)
+	if (req.Kind != "plan" && req.Kind != "package") || req.Code == "" || req.PriceCents < 1 || req.PriceCents > 100000000 {
+		apiError(w, http.StatusBadRequest, "价格须在 0.01 元到 1000000 元之间")
+		return
+	}
+
+	tx, err := s.appDB.BeginTx(r.Context(), nil)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "支付价格保存失败")
+		return
+	}
+	defer tx.Rollback()
+	var exists int
+	var result sql.Result
+	switch req.Kind {
+	case "plan":
+		err = tx.QueryRow(`select 1 from member_plans where plan_code=? and status=1`, req.Code).Scan(&exists)
+		if err == sql.ErrNoRows {
+			apiError(w, http.StatusNotFound, "支付套餐不存在或已停用")
+			return
+		}
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, "支付价格保存失败")
+			return
+		}
+		result, err = tx.Exec(`update member_plans set price_cents=?, updated_at=? where plan_code=? and status=1`, req.PriceCents, appNow(), req.Code)
+	case "package":
+		err = tx.QueryRow(`select 1 from point_packages where package_code=? and status=1`, req.Code).Scan(&exists)
+		if err == sql.ErrNoRows {
+			apiError(w, http.StatusNotFound, "支付套餐不存在或已停用")
+			return
+		}
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, "支付价格保存失败")
+			return
+		}
+		result, err = tx.Exec(`update point_packages set price_cents=?, updated_at=? where package_code=? and status=1`, req.PriceCents, appNow(), req.Code)
+	}
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "支付价格保存失败")
+		return
+	}
+	if _, err = result.RowsAffected(); err != nil {
+		apiError(w, http.StatusInternalServerError, "支付价格保存失败")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		apiError(w, http.StatusInternalServerError, "支付价格保存失败")
+		return
+	}
+	catalog, err := s.loadAdminPaymentPrices()
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "支付价格读取失败")
+		return
+	}
+	jsonResponse(w, catalog)
+}
+
+func (s *server) loadAdminPaymentPrices() (adminPaymentPricesVO, error) {
+	plans, err := s.loadMemberPlans()
+	if err != nil {
+		return adminPaymentPricesVO{}, err
+	}
+	packages, err := s.loadPointPackages()
+	if err != nil {
+		return adminPaymentPricesVO{}, err
+	}
+	return adminPaymentPricesVO{Plans: plans, RechargePackages: packages}, nil
 }
 
 func (s *server) loadPointPackages() ([]pointPackageVO, error) {
