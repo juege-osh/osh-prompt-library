@@ -202,6 +202,51 @@ func initAppDB(db *sql.DB) error {
 			foreign key(user_id) references users(id)
 		)`,
 		`create index if not exists idx_orders_user on orders(user_id, created_at desc)`,
+		`create table if not exists point_packages (
+			id integer primary key autoincrement,
+			package_code text not null unique,
+			package_name text not null,
+			points integer not null,
+			price_cents integer not null,
+			status integer not null default 1,
+			sort integer not null default 0,
+			created_at text not null,
+			updated_at text not null
+		)`,
+		`create table if not exists payments (
+			id integer primary key autoincrement,
+			order_no text not null unique references orders(order_no),
+			payment_no text not null unique,
+			provider text not null,
+			channel text not null,
+			amount_cents integer not null,
+			status text not null,
+			platform_trade_no text,
+			pay_url text,
+			qrcode text,
+			request_payload text,
+			response_payload text,
+			expire_at text,
+			paid_at text,
+			created_at text not null,
+			updated_at text not null
+		)`,
+		`create index if not exists idx_payments_status_expire on payments(status, expire_at)`,
+		`create table if not exists payment_notify_logs (
+			id integer primary key autoincrement,
+			provider text not null,
+			payment_no text,
+			order_no text,
+			platform_trade_no text,
+			notify_key text not null unique,
+			raw_payload text,
+			signature_valid integer not null default 0,
+			transaction_status text,
+			process_status text not null,
+			error_msg text,
+			created_at text not null
+		)`,
+		`create index if not exists idx_payment_notify_payment on payment_notify_logs(payment_no, created_at desc)`,
 		`create table if not exists resource_unlocks (
 			user_id integer not null references users(id) on delete cascade,
 			resource_kind text not null check(resource_kind in ('video', 'image')),
@@ -334,6 +379,32 @@ func seedAppDB(db *sql.DB) error {
 				updated_at = excluded.updated_at`,
 			plan.code, plan.name, plan.months, plan.price, plan.points*pointScale, plan.sort, now, now)
 		if err != nil {
+			return err
+		}
+	}
+	packages := []struct {
+		code   string
+		name   string
+		points int
+		price  int
+		sort   int
+	}{
+		{"points_1000", "1000 充值积分", 1000, 1000, 10},
+		{"points_5000", "5000 充值积分", 5000, 5000, 20},
+		{"points_10000", "10000 充值积分", 10000, 10000, 30},
+	}
+	for _, pkg := range packages {
+		if _, err := db.Exec(`insert into point_packages
+			(package_code, package_name, points, price_cents, status, sort, created_at, updated_at)
+			values (?, ?, ?, ?, 1, ?, ?, ?)
+			on conflict(package_code) do update set
+				package_name = excluded.package_name,
+				points = excluded.points,
+				price_cents = excluded.price_cents,
+				status = 1,
+				sort = excluded.sort,
+				updated_at = excluded.updated_at`,
+			pkg.code, pkg.name, pkg.points*pointScale, pkg.price, pkg.sort, now, now); err != nil {
 			return err
 		}
 	}

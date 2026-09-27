@@ -1,5 +1,5 @@
 (() => {
-  const state = {user: null, plans: [], records: [], orders: [], adminUsers: [], pricing: null, assetKind: 'all', assetPage: 1};
+  const state = {user: null, plans: [], paymentProducts: {provider: 'mock', plans: [], rechargePackages: []}, records: [], orders: [], adminUsers: [], pricing: null, assetKind: 'all', assetPage: 1};
   let widget, dialog, message, lastUserID;
   let unlockInProgress = false;
   const sessionChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('osh-session') : null;
@@ -242,21 +242,67 @@
   }
 
   function renderMember(panel) {
+    const products = state.paymentProducts || {plans: state.plans, rechargePackages: []};
+    const plans = products.plans?.length ? products.plans : state.plans;
+    const packages = products.rechargePackages || [];
+    const paymentEnabled = products.provider === 'mock' || products.provider === 'huifu';
+    const paymentLabel = products.provider === 'mock' ? '创建模拟订单' : products.provider === 'huifu' ? '立即支付' : '支付待配置';
     panel.innerHTML = `
-      <section class="memberPlans">${state.plans.map(plan => `<article class="memberPlan"><strong>${esc(plan.planName)}</strong><b>${money(plan.priceCents)}</b><span>每月 ${fmt(plan.monthlyPoints)} 额度</span><button type="button" disabled>订阅暂未开放</button></article>`).join('')}</section>
-      <section class="accountSection"><div class="sectionTitle"><h3>充值积分</h3><span>长期有效，不随会员周期到期</span></div><button type="button" disabled>充值暂未开放</button></section>
+      <section class="memberPlans">${plans.map(plan => `<article class="memberPlan"><strong>${esc(plan.planName)}</strong><b>${money(plan.priceCents)}</b><span>每月 ${fmt(plan.monthlyPoints)} 额度</span><button type="button" data-buy-type="subscription" data-buy-code="${esc(plan.planCode)}" ${paymentEnabled ? '' : 'disabled'}>${paymentLabel}</button></article>`).join('')}</section>
+      <section class="accountSection"><div class="sectionTitle"><h3>充值积分</h3><span>长期有效，不随会员周期到期</span></div><div class="rechargePlans">${packages.map(pkg => `<article class="memberPlan"><strong>${esc(pkg.packageName)}</strong><b>${money(pkg.priceCents)}</b><span>到账 ${fmt(pkg.points)} 充值积分</span><button type="button" data-buy-type="recharge" data-buy-code="${esc(pkg.packageCode)}" ${paymentEnabled ? '' : 'disabled'}>${paymentLabel}</button></article>`).join('')}</div></section>
       <section class="accountSection explain">
         <h3>额度和付费逻辑</h3>
         <p>注册赠送 888 充值积分，长期有效，不计入会员额度。订阅 VIP 后，每个自然月发放对应套餐额度：月 VIP 1288、年 VIP 1888、永久 VIP 3888，仅当期有效。</p>
         <p>从月 VIP 升级到年 VIP，或从年 VIP 升级到永久 VIP，当月会补发新旧套餐的额度差额。消费时优先扣即将过期的额度，再扣长期有效的充值积分。</p>
         <p>视频基础价格 5 积分、图片基础价格 1 积分，实际消耗 = 基础价格 × 当前倍率（${fmt(state.pricing?.multiplier ?? 1)}）。当前视频 ${fmt(state.pricing?.video ?? 5)} 积分、图片 ${fmt(state.pricing?.image ?? 1)} 积分，以解锁确认时的价格为准，支持两位小数。</p>
         <p>解锁包含提示词、原始素材和下载。同一账号重复访问不再扣费，倍率变化不影响已购资产。普通用户与 VIP 采用相同价格，会员每月享有套餐额度。</p>
-        <p>支付模块尚未接入，当前购买按钮仅展示；管理员可在控制台手动开通会员或调整充值积分。</p>
+        <p>${products.provider === 'mock' ? '当前为本地模拟支付模式，创建订单后可点击“模拟支付成功”验证完整结算链路；不会产生真实扣款。' : products.provider === 'huifu' ? '支付由汇付统一收银台处理。只有支付平台成功通知并通过金额、商户号和签名校验后，系统才会发放会员或充值积分。' : '支付提供方尚未配置，当前不能创建支付订单。请管理员配置 PAY_PROVIDER 后重启服务。'}</p>
       </section>`;
+    panel.querySelectorAll('[data-buy-type]').forEach(button => button.addEventListener('click', () => startPayment(button.dataset.buyType, button.dataset.buyCode, button)));
   }
 
   function renderOrders(panel) {
-    panel.innerHTML = `<section class="accountSection"><div class="sectionTitle"><h3>订阅与充值</h3><span>最近订单</span></div><div class="orderList">${state.orders.length ? state.orders.map(order => `<div class="orderRow"><span>${esc(order.subject)}</span><b>${order.orderType === 'recharge' ? fmt(order.points) + ' 积分' : money(order.amountCents)}</b><small>${esc(order.createdAt)}</small></div>`).join('') : '<div class="empty"><i data-lucide="receipt-text"></i><p>暂无订单记录</p><a class="button" href="/member">前往会员中心</a></div>'}</div></section>`;
+    const statusName = status => ({pending:'待支付', success:'已完成', failed:'支付失败', closed:'已关闭'}[status] || status);
+    panel.innerHTML = `<section class="accountSection"><div class="sectionTitle"><h3>订阅与充值</h3><span>最近订单</span></div><div class="orderList">${state.orders.length ? state.orders.map(order => `<div class="orderRow"><span>${esc(order.subject)}</span><b>${order.orderType === 'recharge' ? fmt(order.points) + ' 积分' : money(order.amountCents)}</b><small>${statusName(order.status)} · ${esc(order.createdAt)}</small></div>`).join('') : '<div class="empty"><i data-lucide="receipt-text"></i><p>暂无订单记录</p><a class="button" href="/member">前往会员中心</a></div>'}</div></section>`;
+  }
+
+  async function startPayment(orderType, code, button) {
+    if (button) button.disabled = true;
+    try {
+      const body = orderType === 'subscription' ? {order_type: orderType, plan_code: code, channel: 'alipay'} : {order_type: orderType, package_code: code, channel: 'alipay'};
+      const data = await api('/api/payments/orders', {method: 'POST', body});
+      showPaymentDialog(data.order);
+    } catch (err) {
+      setMessage(err.message, 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function showPaymentDialog(initialOrder) {
+    const modal = document.createElement('dialog');
+    modal.className = 'paymentDialog';
+    document.body.append(modal);
+    const statusName = status => ({pending:'待支付', success:'已完成', failed:'支付失败', closed:'已关闭'}[status] || status);
+    const render = order => {
+      const mock = order.provider === 'mock' && order.status === 'pending';
+      modal.innerHTML = `<form method="dialog"><div class="paymentDialogHead"><strong>订单支付</strong><button value="close" aria-label="关闭" title="关闭">×</button></div><div class="paymentDialogBody"><p>${esc(order.subject)}</p><strong class="paymentAmount">¥${esc(order.amount)}</strong><p>订单状态：${statusName(order.status)}</p>${order.payUrl && order.provider !== 'mock' ? `<a class="payLink" href="${esc(order.payUrl)}" target="_blank" rel="noopener">打开支付页面</a>` : ''}${mock ? '<p class="paymentHint">本地模拟支付不会产生真实扣款。</p>' : ''}<div class="paymentActions">${mock ? '<button type="button" data-mock-pay>模拟支付成功</button>' : ''}<button type="button" data-refresh-pay>刷新状态</button>${order.status === 'pending' ? '<button type="button" data-cancel-pay>取消订单</button>' : ''}</div><p class="paymentResult" role="status"></p></div></form>`;
+      modal.querySelector('[data-mock-pay]')?.addEventListener('click', async () => {
+        try { const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}/mock-success`, {method:'POST', body:{}}); render(data.order); await refreshAccountData(); }
+        catch (err) { modal.querySelector('.paymentResult').textContent = err.message; }
+      });
+      modal.querySelector('[data-refresh-pay]')?.addEventListener('click', async () => {
+        try { const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}`); render(data.order); }
+        catch (err) { modal.querySelector('.paymentResult').textContent = err.message; }
+      });
+      modal.querySelector('[data-cancel-pay]')?.addEventListener('click', async () => {
+        try { const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}/cancel`, {method:'POST', body:{}}); render(data.order); }
+        catch (err) { modal.querySelector('.paymentResult').textContent = err.message; }
+      });
+    };
+    render(initialOrder);
+    modal.addEventListener('close', () => modal.remove(), {once:true});
+    modal.showModal();
   }
 
   function renderConsole(panel) {
@@ -431,9 +477,10 @@
   }
 
   async function refreshAccountData() {
-    const tasks = [api('/api/member/plans'), api('/api/user/profile'), api('/api/points/records'), api('/api/orders')];
-    const [plans, profile, records, orders] = await Promise.all(tasks);
+    const tasks = [api('/api/member/plans'), api('/api/payments/products'), api('/api/user/profile'), api('/api/points/records'), api('/api/orders')];
+    const [plans, products, profile, records, orders] = await Promise.all(tasks);
     state.plans = plans.plans || [];
+    state.paymentProducts = products;
     state.user = {...state.user, ...profile.user, ...profile.balance};
     state.records = records.records || [];
     state.orders = orders.orders || [];
@@ -460,6 +507,7 @@
       const plans = await api('/api/member/plans');
       state.plans = plans.plans || [];
     } catch { state.plans = []; }
+    state.paymentProducts = await api('/api/payments/products').catch(() => ({provider:'disabled', plans:state.plans, rechargePackages:[]}));
     state.pricing = await api('/api/pricing').catch(() => null);
     drawWidget();
     if (workspace && state.user) {

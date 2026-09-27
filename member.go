@@ -182,6 +182,24 @@ func (s *server) loadMemberStatus(userID int64) memberStatusVO {
 }
 
 func (s *server) grantMembershipTx(tx *sql.Tx, userID int64, planCode, sourceType, sourceNo string) (int64, error) {
+	membershipID, err := s.grantMembershipEntitlementTx(tx, userID, planCode, sourceType, sourceNo)
+	if err != nil {
+		return 0, err
+	}
+	plan, err := loadPlanTx(tx, planCode)
+	if err != nil {
+		return 0, errorsWithDefault(err, "会员套餐不存在")
+	}
+	if err = createOrderTx(tx, userID, "subscription", plan.name, int64(plan.priceCents), int64(plan.monthlyPoints), plan.code, sourceType, sourceNo); err != nil {
+		return 0, err
+	}
+	return membershipID, nil
+}
+
+// grantMembershipEntitlementTx applies a paid or administrative membership
+// grant without creating a second business order. Payment orders already
+// exist before the entitlement transaction starts.
+func (s *server) grantMembershipEntitlementTx(tx *sql.Tx, userID int64, planCode, sourceType, sourceNo string) (int64, error) {
 	plan, err := loadPlanTx(tx, planCode)
 	if err != nil {
 		return 0, errorsWithDefault(err, "会员套餐不存在")
@@ -236,9 +254,6 @@ func (s *server) grantMembershipTx(tx *sql.Tx, userID int64, planCode, sourceTyp
 		}
 	}
 	if err = grantVipCycleTx(tx, userID, membershipID, sourceNo, plan.monthlyPoints, now); err != nil {
-		return 0, err
-	}
-	if err = createOrderTx(tx, userID, "subscription", plan.name, int64(plan.priceCents), int64(plan.monthlyPoints), plan.code, sourceType, sourceNo); err != nil {
 		return 0, err
 	}
 	return membershipID, nil

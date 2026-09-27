@@ -48,9 +48,12 @@ image previews are resized to at most 320 pixels and encoded as quality-35 JPEG;
 the originals are not exposed as a fallback. Generated previews are cached in
 the ignored `.media-cache` directory.
 
-The local `app.sqlite3` holds accounts, points and unlocks. Real payment remains
-unavailable until the payment module is migrated. No server deployment or remote
-database change is needed for this implementation.
+The local `app.sqlite3` holds accounts, points, unlocks, business orders, payment
+orders and notification logs. Payment is disabled when `PAY_PROVIDER` is missing;
+set `PAY_PROVIDER=mock` for local mock settlement without external credentials.
+Set `PAY_PROVIDER=huifu`
+only after mounting the Huifu PKCS#8 private key and platform X.509 public key,
+and configuring a public notification URL. Never put those files or values in Git.
 
 ## Workspace and Pricing
 
@@ -58,7 +61,8 @@ database change is needed for this implementation.
 - `/assets`: purchased assets with video/image filters and pagination.
 - `/account`: profile; `/account?view=orders`: orders.
 - `/account?view=console`: admin console, hidden for levels 1 and 2.
-- `/member`: standalone membership center. Payment is not yet enabled.
+- `/member`: standalone membership center. Creates membership/recharge payment orders;
+  local mock mode can settle them from the payment dialog.
 - `GET /api/assets?kind=all|video|image&page=1`: current user's purchases, 24/page.
 - `GET /api/user/usage?days=10`: authenticated user's quota, lifetime video/image
   purchase counts and historical charges, plus daily charges for 1-10 days.
@@ -72,6 +76,16 @@ database change is needed for this implementation.
 - `GET /api/admin/pricing`: same information, level 3 only.
 - `POST /api/admin/pricing`: level 3 only; JSON `{"multiplier":0.1,"version":1}`.
   Origin checks, optimistic version checks and `pricing_changes` audit apply.
+- `GET /api/payments/products`: payment provider, membership plans and fixed recharge packages.
+- `POST /api/payments/orders`: level 1; JSON contains only `order_type` plus a server-known
+  `plan_code` or `package_code`, and optional `channel` (`alipay` or `wechat`). Amounts are
+  loaded from SQLite and cannot be submitted by the browser.
+- `GET /api/payments/{orderNo}`: level 1; returns the current order/payment status and
+  reconciles a pending Huifu payment through the provider query API.
+- `POST /api/payments/{orderNo}/cancel`: level 1; cancels a pending order after provider
+  close succeeds. `POST /api/payments/{orderNo}/mock-success` exists only in mock mode.
+- `POST /api/payments/notify/huifu`: public form callback; verifies the original
+  `resp_data` string with RSA2 before processing success/failure notifications.
 
 On first startup, `point_hundredths_v1` atomically converts all point amounts
 in balances, lots, ledgers, plans, cycles, orders and unlocks to integer

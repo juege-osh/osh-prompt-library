@@ -41,6 +41,8 @@ type server struct {
 	r2Secret    string
 	mediaClient *http.Client
 	emailSender func(context.Context, string, string, string) error
+	payProvider string
+	huifu       *huifuPayClient
 }
 
 func hmacSHA256(key []byte, value string) []byte {
@@ -423,7 +425,15 @@ func main() {
 	if err = initAppDB(appDB); err != nil {
 		log.Fatal(err)
 	}
-	s := &server{db: db, imageDB: imageDB, appDB: appDB, root: root, r2Access: r2Access, r2Secret: r2Secret}
+	payProvider := strings.ToLower(strings.TrimSpace(os.Getenv("PAY_PROVIDER")))
+	if payProvider == "" {
+		payProvider = "disabled"
+	}
+	var huifu *huifuPayClient
+	if payProvider == "huifu" {
+		huifu = newHuifuPayClientFromEnv()
+	}
+	s := &server{db: db, imageDB: imageDB, appDB: appDB, root: root, r2Access: r2Access, r2Secret: r2Secret, payProvider: payProvider, huifu: huifu}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", s.register)
 	mux.HandleFunc("POST /api/auth/login", s.login)
@@ -440,6 +450,13 @@ func main() {
 	mux.HandleFunc("GET /api/member/status", s.requireLevel(1, s.memberStatus))
 	mux.HandleFunc("GET /api/member/center", s.requireLevel(1, s.memberCenter))
 	mux.HandleFunc("GET /api/orders", s.requireLevel(1, s.orderRecords))
+	mux.HandleFunc("GET /api/payments/products", s.paymentProducts)
+	mux.HandleFunc("POST /api/payments/orders", s.requireLevel(1, s.createPaymentOrder))
+	mux.HandleFunc("GET /api/payments/{orderNo}", s.requireLevel(1, s.paymentStatus))
+	mux.HandleFunc("POST /api/payments/{orderNo}/cancel", s.requireLevel(1, s.cancelPayment))
+	mux.HandleFunc("POST /api/payments/{orderNo}/mock-success", s.requireLevel(1, s.mockPaymentSuccess))
+	mux.HandleFunc("POST /api/payments/notify/huifu", s.huifuNotify)
+	mux.HandleFunc("GET /api/payments/notify/huifu", s.huifuNotify)
 	mux.HandleFunc("GET /api/assets", s.requireLevel(1, s.purchasedAssets))
 	mux.HandleFunc("GET /api/pricing", s.pricing)
 	mux.HandleFunc("GET /api/admin/pricing", s.requireLevel(3, func(w http.ResponseWriter, r *http.Request, _ *currentUser) { s.pricing(w, r) }))
