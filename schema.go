@@ -369,14 +369,7 @@ func seedAppDB(db *sql.DB) error {
 		_, err := db.Exec(`insert into member_plans
 			(plan_code, plan_name, duration_months, price_cents, monthly_points, status, sort, created_at, updated_at)
 			values (?, ?, ?, ?, ?, 1, ?, ?, ?)
-			on conflict(plan_code) do update set
-				plan_name = excluded.plan_name,
-				duration_months = excluded.duration_months,
-				price_cents = excluded.price_cents,
-				monthly_points = excluded.monthly_points,
-				status = 1,
-				sort = excluded.sort,
-				updated_at = excluded.updated_at`,
+			on conflict(plan_code) do nothing`,
 			plan.code, plan.name, plan.months, plan.price, plan.points*pointScale, plan.sort, now, now)
 		if err != nil {
 			return err
