@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func paymentTestMux(s *server) http.Handler {
@@ -88,6 +89,24 @@ func TestHuifuPCTradeType(t *testing.T) {
 	}
 	if got := huifuPCTradeType("wechat"); got != "T_NATIVE" {
 		t.Fatalf("wechat trade type = %q, want T_NATIVE", got)
+	}
+}
+
+func TestHuifuExpireTimeUsesChinaStandardTime(t *testing.T) {
+	expireAt := time.Date(2026, time.September, 28, 4, 54, 51, 0, time.UTC)
+	if got := expireAt.In(huifuLocation).Format(huifuTimeLayout); got != "20260928125451" {
+		t.Fatalf("Huifu expire time = %q, want Beijing time 20260928125451", got)
+	}
+}
+
+func TestHuifuPreorderAcceptsProcessingResponse(t *testing.T) {
+	for _, code := range []string{huifuSuccessCode, huifuPendingCode} {
+		if !isHuifuPreorderAccepted(code) {
+			t.Fatalf("preorder response code %q should be accepted", code)
+		}
+	}
+	if isHuifuPreorderAccepted("10000001") {
+		t.Fatal("unknown preorder response code was accepted")
 	}
 }
 

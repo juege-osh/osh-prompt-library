@@ -25,7 +25,12 @@ const (
 	huifuPreorderPath = "/v2/trade/payment/jspay"
 	huifuQueryPath    = "/v2/trade/payment/scanpay/query"
 	huifuClosePath    = "/v2/trade/payment/scanpay/close"
+	huifuTimeLayout   = "20060102150405"
+	huifuSuccessCode  = "00000000"
+	huifuPendingCode  = "00000100"
 )
+
+var huifuLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 type huifuPayClient struct {
 	baseURL        string
@@ -147,13 +152,13 @@ func (c *huifuPayClient) CreatePayment(paymentNo, subject string, amountCents in
 		"delay_acct_flag": "N",
 		"notify_url":      c.notifyURL,
 		"mer_priv":        paymentNo,
-		"time_expire":     expireAt.UTC().Format("20060102150405"),
+		"time_expire":     expireAt.In(huifuLocation).Format(huifuTimeLayout),
 	}
 	response, raw, err := c.post(huifuPreorderPath, data)
 	if err != nil {
 		return huifuPaymentResult{}, err
 	}
-	if code := stringValue(response["resp_code"]); code != "00000000" {
+	if code := stringValue(response["resp_code"]); !isHuifuPreorderAccepted(code) {
 		return huifuPaymentResult{}, fmt.Errorf("汇付下单失败: %s", stringValue(response["resp_desc"]))
 	}
 	if stringValue(response["huifu_id"]) != c.huifuID || stringValue(response["req_seq_id"]) != paymentNo {
@@ -164,6 +169,10 @@ func (c *huifuPayClient) CreatePayment(paymentNo, subject string, amountCents in
 		return huifuPaymentResult{}, errors.New("汇付下单未返回二维码")
 	}
 	return huifuPaymentResult{PaymentNo: paymentNo, PlatformTradeNo: firstValue(response, "hf_seq_id", "pre_order_id"), JumpURL: jump, ResponsePayload: raw}, nil
+}
+
+func isHuifuPreorderAccepted(code string) bool {
+	return code == huifuSuccessCode || code == huifuPendingCode
 }
 
 // 汇付 PC 聚合正扫 uses the native trade types. The older osh-backend

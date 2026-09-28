@@ -26,7 +26,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed index.html style.css app.js images.html images.js images.css account.js account.css shell.js site.css workspace.html usage.js web-vendor/lucide.min.js web-vendor/chart.umd.js
+//go:embed index.html style.css app.js images.html images.js images.css account.js account.css shell.js site.css workspace.html usage.js web-vendor/lucide.min.js web-vendor/chart.umd.js web-vendor/qrcode.min.js
 var assets embed.FS
 
 var validID = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,119}$`)
@@ -490,7 +490,7 @@ func main() {
 			w.Write(body)
 		})
 	}
-	for _, name := range []string{"index.html", "style.css", "app.js", "images.html", "images.js", "images.css", "account.js", "account.css", "shell.js", "site.css", "usage.js", "web-vendor/lucide.min.js", "web-vendor/chart.umd.js"} {
+	for _, name := range []string{"index.html", "style.css", "app.js", "images.html", "images.js", "images.css", "account.js", "account.css", "shell.js", "site.css", "usage.js", "web-vendor/lucide.min.js", "web-vendor/chart.umd.js", "web-vendor/qrcode.min.js"} {
 		filename := name
 		route := "/" + name
 		mux.HandleFunc("GET "+route, func(w http.ResponseWriter, r *http.Request) {

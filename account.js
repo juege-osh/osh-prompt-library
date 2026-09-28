@@ -23,6 +23,20 @@
 
   const fmt = value => Number(value || 0).toLocaleString('zh-CN', {maximumFractionDigits: 2});
   const money = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`;
+  const dateTime = value => {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(date).map(part => [part.type, part.value]));
+    return `${parts.year}年${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}:${parts.second}`;
+  };
+  const activeVIPExpiry = user => {
+    if (!user || user.level < 2) return '';
+    if (!user.vipExpireTime) return user.level === 2 ? '永久有效' : '';
+    return new Date(user.vipExpireTime).getTime() > Date.now() ? dateTime(user.vipExpireTime) : '';
+  };
   const levelName = level => level >= 3 ? '管理员' : level >= 2 ? 'VIP' : '普通用户';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const workspace = document.getElementById('workspaceBody');
@@ -203,9 +217,10 @@
   }
 
   function renderProfile(panel) {
+    const vipExpiry = activeVIPExpiry(state.user);
     panel.innerHTML = `
       <section class="accountSummary">
-        <div><span>身份</span><strong>${levelName(state.user.level)}</strong></div>
+        <div><span>身份</span><strong>${levelName(state.user.level)}</strong>${vipExpiry ? `<small class="vipExpiry">${vipExpiry === '永久有效' ? vipExpiry : `会员到期：${esc(vipExpiry)}`}</small>` : ''}</div>
         <div class="quotaSummary"><span>剩余额度</span><strong id="quotaRemaining">${fmt(state.user.quotaPoints)}</strong><progress id="quotaProgress" max="1" aria-label="剩余额度比例" aria-describedby="quotaProgressText"></progress><small id="quotaProgressText">正在读取额度...</small></div>
         <div><span>充值积分</span><strong>${fmt(state.user.rechargePoints)}</strong></div>
       </section>
@@ -213,7 +228,6 @@
         <p><b>用户 ID</b><span>${state.user.id}</span></p>
         <p><b>用户名</b><span>${esc(state.user.username)}</span></p>
         <p><b>邮箱</b><span>${esc(state.user.email)}</span></p>
-        <p><b>会员到期</b><span>${state.user.vipExpireTime || '未开通或永久'}</span></p>
       </section>
       <div id="usageRecords" class="usageRecords" aria-label="使用记录"></div>
       <section class="formGrid">
@@ -247,7 +261,9 @@
     const packages = products.rechargePackages || [];
     const paymentEnabled = products.provider === 'mock' || products.provider === 'huifu';
     const paymentLabel = products.provider === 'mock' ? '创建模拟订单' : products.provider === 'huifu' ? '立即支付' : '支付待配置';
+    const vipExpiry = activeVIPExpiry(state.user);
     panel.innerHTML = `
+      ${vipExpiry ? `<p class="memberExpiry"><i data-lucide="crown"></i><span>当前会员${vipExpiry === '永久有效' ? ' · 永久有效' : ` · 到期时间 ${esc(vipExpiry)}`}</span></p>` : ''}
       <section class="memberPlans">${plans.map(plan => `<article class="memberPlan"><strong>${esc(plan.planName)}</strong><b>${money(plan.priceCents)}</b><span>每月 ${fmt(plan.monthlyPoints)} 额度</span><button type="button" data-buy-type="subscription" data-buy-code="${esc(plan.planCode)}" ${paymentEnabled ? '' : 'disabled'}>${paymentLabel}</button></article>`).join('')}</section>
       <section class="accountSection"><div class="sectionTitle"><h3>充值积分</h3><span>长期有效，不随会员周期到期</span></div><div class="rechargePlans">${packages.map(pkg => `<article class="memberPlan"><strong>${esc(pkg.packageName)}</strong><b>${money(pkg.priceCents)}</b><span>到账 ${fmt(pkg.points)} 充值积分</span><button type="button" data-buy-type="recharge" data-buy-code="${esc(pkg.packageCode)}" ${paymentEnabled ? '' : 'disabled'}>${paymentLabel}</button></article>`).join('')}</div></section>
       <section class="accountSection explain">
@@ -259,6 +275,7 @@
         <p>${products.provider === 'mock' ? '当前为本地模拟支付模式，创建订单后可点击“模拟支付成功”验证完整结算链路；不会产生真实扣款。' : products.provider === 'huifu' ? '支付由汇付统一收银台处理。只有支付平台成功通知并通过金额、商户号和签名校验后，系统才会发放会员或充值积分。' : '支付提供方尚未配置，当前不能创建支付订单。请管理员配置 PAY_PROVIDER 后重启服务。'}</p>
       </section>`;
     panel.querySelectorAll('[data-buy-type]').forEach(button => button.addEventListener('click', () => startPayment(button.dataset.buyType, button.dataset.buyCode, button)));
+    window.OshShell?.icons();
   }
 
   function renderOrders(panel) {
@@ -284,24 +301,54 @@
     modal.className = 'paymentDialog';
     document.body.append(modal);
     const statusName = status => ({pending:'待支付', success:'已完成', failed:'支付失败', closed:'已关闭'}[status] || status);
+    let pollTimer;
+    const schedulePoll = order => {
+      clearTimeout(pollTimer);
+      if (order.status !== 'pending' || order.provider === 'mock') return;
+      pollTimer = setTimeout(async () => {
+        if (!modal.open) return;
+        try {
+          const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}`);
+          if (data.order.status !== order.status || data.order.qrcode !== order.qrcode) render(data.order);
+          else schedulePoll(data.order);
+          if (data.order.status === 'success') {
+            try { await refreshAccountData(); } catch { /* The receipt remains available even if profile refresh fails. */ }
+          }
+        } catch { schedulePoll(order); }
+      }, 5000);
+    };
     const render = order => {
       const mock = order.provider === 'mock' && order.status === 'pending';
-      modal.innerHTML = `<form method="dialog"><div class="paymentDialogHead"><strong>订单支付</strong><button value="close" aria-label="关闭" title="关闭">×</button></div><div class="paymentDialogBody"><p>${esc(order.subject)}</p><strong class="paymentAmount">¥${esc(order.amount)}</strong><p>订单状态：${statusName(order.status)}</p>${order.payUrl && order.provider !== 'mock' ? `<a class="payLink" href="${esc(order.payUrl)}" target="_blank" rel="noopener">打开支付页面</a>` : ''}${mock ? '<p class="paymentHint">本地模拟支付不会产生真实扣款。</p>' : ''}<div class="paymentActions">${mock ? '<button type="button" data-mock-pay>模拟支付成功</button>' : ''}<button type="button" data-refresh-pay>刷新状态</button>${order.status === 'pending' ? '<button type="button" data-cancel-pay>取消订单</button>' : ''}</div><p class="paymentResult" role="status"></p></div></form>`;
+      const showQRCode = order.status === 'pending' && order.qrcode && order.provider !== 'mock';
+      modal.classList.toggle('paymentDialog--success', order.status === 'success');
+      const controls = `${order.status === 'success' ? '' : `<div class="paymentActions">${mock ? '<button type="button" data-mock-pay>模拟支付成功</button>' : ''}<button type="button" data-refresh-pay><i data-lucide="refresh-cw"></i> 刷新状态</button>${order.status === 'pending' ? '<button type="button" data-cancel-pay>取消订单</button>' : ''}</div>`}<p class="paymentResult" role="status"></p>`;
+      const receipt = `<div class="paymentReceipt"><div class="receiptMeta"><span>交易号：${esc(order.platformTradeNo || order.paymentNo)}</span><span>支付方式：${mock || order.provider === 'mock' ? '模拟支付' : '支付宝'}</span><span>购买日期：${esc(dateTime(order.paidAt || order.createdAt))}</span></div><strong class="receiptSubject">${esc(order.subject)}</strong><div class="receiptLine"><span>小计</span><span>${money(order.amountCents)}</span></div><div class="receiptLine receiptTotal"><span>总计</span><strong>${money(order.amountCents)}</strong></div></div>`;
+      const pending = `<div class="paymentBrand"><span class="alipayMark" aria-hidden="true">支</span><strong>支付宝</strong><span class="paymentBrandState">扫码支付</span></div><div class="paymentSheet"><dl class="paymentDetails"><div><dt>金额</dt><dd><strong>${money(order.amountCents)}</strong> CNY</dd></div><div><dt>订单</dt><dd>${esc(order.orderNo)}</dd></div><div><dt>描述</dt><dd>${esc(order.subject)}</dd></div></dl>${showQRCode ? '<div class="paymentQr"><canvas data-payment-qr aria-label="支付宝付款二维码"></canvas></div>' : !mock ? '<p class="paymentHint">二维码暂不可用，请刷新订单状态。</p>' : ''}${mock ? '<p class="paymentHint">本地模拟支付不会产生真实扣款。</p>' : ''}</div>`;
+      const other = `<div class="paymentSheet"><p class="paymentFinalState">${statusName(order.status)}</p><p>${esc(order.subject)} · ${money(order.amountCents)}</p></div>`;
+      modal.innerHTML = `<form method="dialog"><button class="paymentClose" value="close" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button>${order.status === 'success' ? receipt : order.status === 'pending' ? pending : other}${controls}</form>`;
+      const qrCanvas = modal.querySelector('[data-payment-qr]');
+      if (qrCanvas && window.QRCode && order.qrcode) {
+        window.QRCode.toCanvas(qrCanvas, order.qrcode, {width: 260, margin: 2, errorCorrectionLevel: 'M'}, error => {
+          if (error) modal.querySelector('.paymentResult').textContent = '二维码生成失败，请刷新订单状态后重试';
+        });
+      }
       modal.querySelector('[data-mock-pay]')?.addEventListener('click', async () => {
         try { const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}/mock-success`, {method:'POST', body:{}}); render(data.order); await refreshAccountData(); }
         catch (err) { modal.querySelector('.paymentResult').textContent = err.message; }
       });
       modal.querySelector('[data-refresh-pay]')?.addEventListener('click', async () => {
-        try { const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}`); render(data.order); }
+        try { const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}`); render(data.order); if (data.order.status === 'success') await refreshAccountData(); }
         catch (err) { modal.querySelector('.paymentResult').textContent = err.message; }
       });
       modal.querySelector('[data-cancel-pay]')?.addEventListener('click', async () => {
         try { const data = await api(`/api/payments/${encodeURIComponent(order.orderNo)}/cancel`, {method:'POST', body:{}}); render(data.order); }
         catch (err) { modal.querySelector('.paymentResult').textContent = err.message; }
       });
+      window.OshShell?.icons();
+      schedulePoll(order);
     };
     render(initialOrder);
-    modal.addEventListener('close', () => modal.remove(), {once:true});
+    modal.addEventListener('close', () => { clearTimeout(pollTimer); modal.remove(); }, {once:true});
     modal.showModal();
   }
 
